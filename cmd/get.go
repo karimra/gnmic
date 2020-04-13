@@ -55,6 +55,14 @@ var getCmd = &cobra.Command{
 				return err
 			}
 		}
+
+		if len(viper.GetStringSlice("get-path")) == 0 && viper.GetString("yang-file") != "" {
+			file = viper.GetString("yang-file")
+			err = pathCmd.RunE(pathCmd, []string{})
+			if err != nil {
+				return err
+			}
+		}
 		encodingVal, ok := gnmi.Encoding_value[strings.Replace(strings.ToUpper(viper.GetString("encoding")), "-", "_", -1)]
 		if !ok {
 			return fmt.Errorf("invalid encoding type '%s'", viper.GetString("encoding"))
@@ -223,7 +231,7 @@ var getCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(getCmd)
 
-	getCmd.Flags().StringSliceP("path", "", []string{"/"}, "get request paths")
+	getCmd.Flags().StringSliceP("path", "", []string{""}, "get request paths")
 	getCmd.Flags().StringP("prefix", "", "", "get request prefix")
 	getCmd.Flags().StringP("model", "", "", "get request model")
 	getCmd.Flags().StringP("type", "t", "ALL", "the type of data that is requested from the target. one of: ALL, CONFIG, STATE, OPERATIONAL")
