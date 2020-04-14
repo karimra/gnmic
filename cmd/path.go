@@ -29,28 +29,11 @@ var pathCmd = &cobra.Command{
 			fmt.Println("path type must be one of 'xpath' or 'gnmi'")
 			return nil
 		}
-		ms := yang.NewModules()
-
-		if err := ms.Read(file); err != nil {
-			return err
-		}
-
-		mod, ok := ms.Modules[module]
-		if !ok {
-			return fmt.Errorf("module %s not found", module)
-		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		out := make(chan string, 0)
-		defer close(out)
-		paths := make([]string, 0)
-		if search {
-			go gather(ctx, out, &paths)
-		} else {
-			go printer(ctx, out)
-		}
-		for _, c := range mod.Container {
-			addContainerToPath("", c, out)
+		paths, err := getPaths(ctx, file, search)
+		if err != nil {
+			return err
 		}
 		if search {
 			p := promptui.Select{
@@ -70,11 +53,19 @@ var pathCmd = &cobra.Command{
 					Search:   promptui.Key{Code: ':', Display: ":"},
 				},
 			}
-			_, selected, err := p.Run()
-			if err != nil {
-				return err
+			
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				default:
+					_, selected, err := p.Run()
+					if err != nil {
+						return err
+					}
+					fmt.Println(selected)
+				}
 			}
-			fmt.Println(selected)
 		}
 		return nil
 	},
@@ -173,4 +164,30 @@ func addCaseToPath(prefix string, ca *yang.Case, out chan string) {
 		}
 		out <- path
 	}
+}
+
+func getPaths(ctx context.Context, file string, search bool) ([]string, error) {
+	ms := yang.NewModules()
+
+	if err := ms.Read(file); err != nil {
+		return nil, err
+	}
+
+	mod, ok := ms.Modules[module]
+	if !ok {
+		return nil, fmt.Errorf("module %s not found", module)
+	}
+
+	out := make(chan string, 0)
+	defer close(out)
+	paths := make([]string, 0)
+	if search {
+		go gather(ctx, out, &paths)
+	} else {
+		go printer(ctx, out)
+	}
+	for _, c := range mod.Container {
+		addContainerToPath("", c, out)
+	}
+	return paths, nil
 }
