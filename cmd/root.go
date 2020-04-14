@@ -45,10 +45,30 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:   "gnmiClient",
 	Short: "run gnmi rpcs from the terminal",
-
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	//	Run: func(cmd *cobra.Command, args []string) { },
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		_, cmdName, err := selectFromList("select cmd", []string{"..", "path", "capabilities", "get", "set", "subscribe"}, 1, 6)
+		if err != nil {
+			return err
+		}
+		if cmdName == ".." {
+			return nil
+		}
+		fmt.Println("you chose", cmdName)
+		paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+		if err != nil {
+			return err
+		}
+		result, err := selectManyFromList("select paths", paths, 20)
+		if err != nil {
+			return err
+		}
+		for _, p := range result {
+			fmt.Println("-", p)
+		}
+		return nil
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
