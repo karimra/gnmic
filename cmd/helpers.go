@@ -77,26 +77,14 @@ func selectManyWithAddFromList(lsName string, items []string) ([]string, error) 
 	result := make([]string, 0)
 	choice := ""
 	var err error
-	nl := append([]string{".."}, items...)
+	nl := make([]string, len(items)+2)
+	copy(nl, []string{"ALL", ".."})
+	copy(nl[2:], items)
 	numSelected := 0
 	p := promptui.SelectWithAdd{
 		Label:    fmt.Sprintf("%s (selected:%d)", lsName, numSelected),
 		Items:    nl,
 		AddLabel: "Other:",
-		// Size:         pageSize,
-		// CursorPos:    pos,
-		// Stdout:       os.Stdout,
-		// HideSelected: true,
-		// Searcher: func(input string, index int) bool {
-		// 	return strings.Contains(nl[index], input)
-		// },
-		// Keys: &promptui.SelectKeys{
-		// 	Prev:     promptui.Key{Code: promptui.KeyPrev, Display: promptui.KeyPrevDisplay},
-		// 	Next:     promptui.Key{Code: promptui.KeyNext, Display: promptui.KeyNextDisplay},
-		// 	PageUp:   promptui.Key{Code: promptui.KeyBackward, Display: promptui.KeyBackwardDisplay},
-		// 	PageDown: promptui.Key{Code: promptui.KeyForward, Display: promptui.KeyForwardDisplay},
-		// 	Search:   promptui.Key{Code: ':', Display: ":"},
-		// },
 	}
 LOOP:
 	p.Label = fmt.Sprintf("%s (selected:%d)", lsName, numSelected)
@@ -106,6 +94,9 @@ LOOP:
 	}
 	if choice == ".." {
 		return result, nil
+	}
+	if choice == "ALL" {
+		return items, nil
 	}
 	for _, r := range result {
 		if r == choice {
