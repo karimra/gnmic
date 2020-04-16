@@ -171,7 +171,10 @@ var getCmd = &cobra.Command{
 					log.Printf("error sending get request: %v", err)
 					return
 				}
-				printPrefix := fmt.Sprintf("[%s] ", address)
+				printPrefix := ""
+				if len(addresses) > 1 && !viper.GetBool("no-prefix") {
+					printPrefix = fmt.Sprintf("[%s] ", address)
+				}
 				lock.Lock()
 				for _, notif := range response.Notification {
 					fmt.Printf("%stimestamp: %d\n", printPrefix, notif.Timestamp)
@@ -219,7 +222,7 @@ var getCmd = &cobra.Command{
 						if len(jsondata) > 0 {
 							err = json.Unmarshal(jsondata, &value)
 							if err != nil {
-								log.Printf("error unmarshling jsonVal '%s'", string(jsondata))
+								log.Printf("error unmarshaling jsonVal '%s'", string(jsondata))
 								continue
 							}
 							data, err := json.MarshalIndent(value, printPrefix, "  ")
