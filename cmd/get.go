@@ -43,6 +43,27 @@ var getCmd = &cobra.Command{
 			fmt.Println("no grpc server address specified")
 			return nil
 		}
+		if len(viper.GetStringSlice("get-path")) == 0 && viper.GetString("yang-file") != "" {
+			file = viper.GetString("yang-file")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+			if err != nil {
+				return err
+			}
+			result, err := selectManyFromList("select paths", paths, 20)
+			if err != nil {
+				return err
+			}
+			if len(result) == 0 {
+				fmt.Println("Err: no paths selected")
+				return nil
+			}
+			viper.Set("get-path", result)
+		} else {
+			fmt.Println("Err: provide path(s) or a yang file to choose paths from")
+			return nil
+		}
 		username := viper.GetString("username")
 		if username == "" {
 			if username, err = readUsername(); err != nil {
@@ -56,13 +77,6 @@ var getCmd = &cobra.Command{
 			}
 		}
 
-		if len(viper.GetStringSlice("get-path")) == 0 && viper.GetString("yang-file") != "" {
-			file = viper.GetString("yang-file")
-			err = pathCmd.RunE(pathCmd, []string{})
-			if err != nil {
-				return err
-			}
-		}
 		encodingVal, ok := gnmi.Encoding_value[strings.Replace(strings.ToUpper(viper.GetString("encoding")), "-", "_", -1)]
 		if !ok {
 			return fmt.Errorf("invalid encoding type '%s'", viper.GetString("encoding"))

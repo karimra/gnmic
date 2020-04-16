@@ -57,6 +57,27 @@ var subscribeCmd = &cobra.Command{
 			fmt.Println("no grpc server address specified")
 			return nil
 		}
+		if len(viper.GetStringSlice("sub-path")) == 0 && viper.GetString("yang-file") != "" {
+			file = viper.GetString("yang-file")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+			if err != nil {
+				return err
+			}
+			result, err := selectManyFromList("select paths", paths, 20)
+			if err != nil {
+				return err
+			}
+			if len(result) == 0 {
+				fmt.Println("Err: no paths selected")
+				return nil
+			}
+			viper.Set("sub-path", result)
+		} else {
+			fmt.Println("Err: provide path(s) or a yang file to choose paths from")
+			return nil
+		}
 		username := viper.GetString("username")
 		if username == "" {
 			if username, err = readUsername(); err != nil {
@@ -190,14 +211,14 @@ var subscribeCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(subscribeCmd)
 	subscribeCmd.Flags().StringP("prefix", "", "", "subscribe request prefix")
-	subscribeCmd.Flags().StringSliceP("path", "", []string{"/"}, "subscribe request paths")
+	subscribeCmd.Flags().StringSliceP("path", "", []string{""}, "subscribe request paths")
 	subscribeCmd.Flags().Int32P("qos", "q", 20, "qos marking")
 	subscribeCmd.Flags().BoolP("updates-only", "", false, "only updates to current state should be sent")
 	subscribeCmd.Flags().StringP("subscription-mode", "", "stream", "one of: once, stream, poll")
 	subscribeCmd.Flags().StringP("stream-subscription-mode", "", "target-defined", "one of: on-change, sample, target-defined")
 	subscribeCmd.Flags().StringP("sampling-interval", "i", "10s",
 		"sampling interval as a decimal number and a suffix unit, such as \"10s\" or \"1m30s\", minimum is 1s")
-	subscribeCmd.Flags().BoolP("suppress-redundant", "", false, "suppress redundant update if the subscribed value didnt not change")
+	subscribeCmd.Flags().BoolP("suppress-redundant", "", false, "suppress redundant update if the subscribed value did not change")
 	subscribeCmd.Flags().StringP("heartbeat-interval", "", "0s", "heartbeat interval in case suppress-redundant is enabled")
 	subscribeCmd.Flags().StringP("model", "", "", "subscribe request used model")
 	//

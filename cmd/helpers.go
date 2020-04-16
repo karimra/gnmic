@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -33,13 +34,14 @@ func selectManyFromList(lsName string, items []string, pageSize int) ([]string, 
 	var err error
 	pos := 0
 	nl := append([]string{".."}, items...)
+	numSelected := 0
 	p := promptui.Select{
-		Label:        lsName,
+		Label:        fmt.Sprintf("%s (selected:%d)", lsName, numSelected),
 		Items:        nl,
 		Size:         pageSize,
 		CursorPos:    pos,
 		Stdout:       os.Stdout,
-		HideSelected: false,
+		HideSelected: true,
 		Searcher: func(input string, index int) bool {
 			return strings.Contains(nl[index], input)
 		},
@@ -51,7 +53,8 @@ func selectManyFromList(lsName string, items []string, pageSize int) ([]string, 
 			Search:   promptui.Key{Code: ':', Display: ":"},
 		},
 	}
-CHOICE:
+LOOP:
+	p.Label = fmt.Sprintf("%s (selected:%d)", lsName, numSelected)
 	pos, choice, err = p.Run()
 	if err != nil {
 		return nil, err
@@ -62,9 +65,10 @@ CHOICE:
 	p.CursorPos = pos
 	for _, r := range result {
 		if r == choice {
-			goto CHOICE
+			goto LOOP
 		}
 	}
+	numSelected++
 	result = append(result, choice)
-	goto CHOICE
+	goto LOOP
 }

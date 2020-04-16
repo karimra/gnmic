@@ -46,26 +46,29 @@ var rootCmd = &cobra.Command{
 	Use:   "gnmiClient",
 	Short: "run gnmi rpcs from the terminal",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		_, cmdName, err := selectFromList("select cmd", []string{"..", "path", "capabilities", "get", "set", "subscribe"}, 1, 6)
+		_, cmdName, err := selectFromList("select cmd", []string{
+			"..",
+			"path",
+			"capabilities",
+			"get",
+			//"set",
+			"subscribe"},
+			1, 6)
 		if err != nil {
 			return err
 		}
 		if cmdName == ".." {
 			return nil
 		}
-		fmt.Println("you chose", cmdName)
-		paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
-		if err != nil {
-			return err
-		}
-		result, err := selectManyFromList("select paths", paths, 20)
-		if err != nil {
-			return err
-		}
-		for _, p := range result {
-			fmt.Println("-", p)
+		switch cmdName {
+		case "capabilities":
+			return capabilitiesCmd.RunE(capabilitiesCmd, nil)
+		case "get":
+			return getCmd.RunE(getCmd, nil)
+		case "set":
+			//return setCmd.RunE(setCmd, nil)
+		case "subscribe":
+			return subscribeCmd.RunE(subscribeCmd, nil)
 		}
 		return nil
 	},
@@ -136,7 +139,7 @@ func initConfig() {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+		//fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
 }
 func readUsername() (string, error) {
@@ -227,7 +230,6 @@ func loadCerts() ([]tls.Certificate, *x509.CertPool, error) {
 	}
 
 	return []tls.Certificate{certificate}, certPool, nil
-
 }
 
 func printer(ctx context.Context, c chan string) {

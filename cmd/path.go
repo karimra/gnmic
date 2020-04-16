@@ -53,7 +53,7 @@ var pathCmd = &cobra.Command{
 					Search:   promptui.Key{Code: ':', Display: ":"},
 				},
 			}
-			
+
 			for {
 				select {
 				case <-ctx.Done():
@@ -177,14 +177,15 @@ func getPaths(ctx context.Context, file string, search bool) ([]string, error) {
 	if !ok {
 		return nil, fmt.Errorf("module %s not found", module)
 	}
-
+	paths := make([]string, 0)
 	out := make(chan string, 0)
 	defer close(out)
-	paths := make([]string, 0)
+	nCtx, nCancel := context.WithCancel(ctx)
+	defer nCancel()
 	if search {
-		go gather(ctx, out, &paths)
+		go gather(nCtx, out, &paths)
 	} else {
-		go printer(ctx, out)
+		go printer(nCtx, out)
 	}
 	for _, c := range mod.Container {
 		addContainerToPath("", c, out)
