@@ -97,6 +97,7 @@ func init() {
 	rootCmd.PersistentFlags().StringP("timeout", "", "30s", "grpc timeout")
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "debug mode")
 	rootCmd.PersistentFlags().BoolP("skip-verify", "", false, "skip verify tls connection")
+	rootCmd.PersistentFlags().BoolP("no-prefix", "", false, "do not add [ip:port] prefix to print output in case of multiple targets")
 	rootCmd.PersistentFlags().StringP("yang-file", "", "", "yang file")
 	//
 	viper.BindPFlag("address", rootCmd.PersistentFlags().Lookup("address"))
@@ -110,6 +111,7 @@ func init() {
 	viper.BindPFlag("timeout", rootCmd.PersistentFlags().Lookup("timeout"))
 	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
 	viper.BindPFlag("skip-verify", rootCmd.PersistentFlags().Lookup("skip-verify"))
+	viper.BindPFlag("no-prefix", rootCmd.PersistentFlags().Lookup("no-prefix"))
 	viper.BindPFlag("yang-file", rootCmd.PersistentFlags().Lookup("yang-file"))
 }
 
