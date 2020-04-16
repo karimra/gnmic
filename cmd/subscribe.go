@@ -58,7 +58,6 @@ var subscribeCmd = &cobra.Command{
 			return nil
 		}
 		if len(viper.GetStringSlice("sub-path")) == 0 && viper.GetString("yang-file") != "" {
-			file = viper.GetString("yang-file")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			paths, err := getPaths(ctx, viper.GetString("yang-file"), true)

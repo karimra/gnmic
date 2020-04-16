@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-var file string
+//var file string
 var pathType string
 var module string
 var types bool
@@ -29,6 +29,10 @@ var pathCmd = &cobra.Command{
 			fmt.Println("path type must be one of 'xpath' or 'gnmi'")
 			return nil
 		}
+		file := viper.GetString("yang-file")
+		if file == "" {
+			return fmt.Errorf("set flag --yang-file")
+		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		paths, err := getPaths(ctx, file, search)
@@ -38,12 +42,25 @@ var pathCmd = &cobra.Command{
 		if search {
 			p := promptui.Select{
 				Label:        "select path",
-				Items:        paths,
+				Items:        append(paths),
 				Size:         10,
 				Stdout:       os.Stdout,
 				HideSelected: true,
 				Searcher: func(input string, index int) bool {
-					return strings.Contains(paths[index], input)
+					kws := strings.Split(input, " ")
+					result := true
+					for _, kw := range kws {
+						if strings.HasPrefix(kw, "!") {
+							kw = strings.TrimLeft(kw, "!")
+							if kw == "" {
+								continue
+							}
+							result = result && !strings.Contains(paths[index], kw)
+						} else {
+							result = result && strings.Contains(paths[index], kw)
+						}
+					}
+					return result
 				},
 				Keys: &promptui.SelectKeys{
 					Prev:     promptui.Key{Code: promptui.KeyPrev, Display: promptui.KeyPrevDisplay},
@@ -63,6 +80,9 @@ var pathCmd = &cobra.Command{
 					if err != nil {
 						return err
 					}
+					if selected == ".." {
+						return nil
+					}
 					fmt.Println(selected)
 				}
 			}
@@ -73,12 +93,12 @@ var pathCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(pathCmd)
-	pathCmd.Flags().StringVarP(&file, "file", "", "", "yang file")
+	//pathCmd.Flags().StringVarP(&file, "file", "", "", "yang file")
 	pathCmd.Flags().StringVarP(&pathType, "path-type", "", "xpath", "path type xpath or gnmi")
 	pathCmd.Flags().StringVarP(&module, "module", "m", "nokia-state", "module name")
 	pathCmd.Flags().BoolVarP(&types, "types", "", false, "print leaf type")
 	pathCmd.Flags().BoolVarP(&search, "search", "", false, "search through path list")
-	viper.BindPFlag("file", pathCmd.Flags().Lookup("file"))
+	//viper.BindPFlag("file", pathCmd.Flags().Lookup("file"))
 	pathCmd.SilenceUsage = true
 }
 

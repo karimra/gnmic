@@ -44,7 +44,6 @@ var getCmd = &cobra.Command{
 			return nil
 		}
 		if len(viper.GetStringSlice("get-path")) == 0 && viper.GetString("yang-file") != "" {
-			file = viper.GetString("yang-file")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
@@ -235,8 +234,9 @@ var getCmd = &cobra.Command{
 							fmt.Printf("%s%s: (%T) %s\n", printPrefix, gnmiPathToXPath(upd.Path), upd.Val.Value, value)
 						}
 					}
+					fmt.Println()
 				}
-				fmt.Println()
+			//fmt.Println()
 				lock.Unlock()
 			}(addr)
 		}

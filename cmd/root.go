@@ -51,7 +51,7 @@ var rootCmd = &cobra.Command{
 			"path",
 			"capabilities",
 			"get",
-			//"set",
+			"set",
 			"subscribe"},
 			1, 6)
 		if err != nil {
@@ -61,6 +61,9 @@ var rootCmd = &cobra.Command{
 			return nil
 		}
 		switch cmdName {
+		case "path":
+			search = true
+			return pathCmd.RunE(pathCmd, nil)
 		case "capabilities":
 			return capabilitiesCmd.RunE(capabilitiesCmd, nil)
 		case "get":
@@ -113,6 +116,8 @@ func init() {
 	viper.BindPFlag("skip-verify", rootCmd.PersistentFlags().Lookup("skip-verify"))
 	viper.BindPFlag("no-prefix", rootCmd.PersistentFlags().Lookup("no-prefix"))
 	viper.BindPFlag("yang-file", rootCmd.PersistentFlags().Lookup("yang-file"))
+
+	rootCmd.SilenceUsage = true
 }
 
 // initConfig reads in config file and ENV variables if set.
