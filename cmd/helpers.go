@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -13,13 +14,24 @@ func selectFromList(lsName string, items []string, initialPos, pageSize int) (in
 	if pageSize <= 0 {
 		pageSize = 10
 	}
+	nl := append([]string{".."}, items...)
 	p := promptui.Select{
 		Label:        lsName,
-		Items:        items,
+		Items:        nl,
 		Size:         pageSize,
 		CursorPos:    initialPos,
 		Stdout:       os.Stderr,
 		HideSelected: true,
+		Searcher: func(input string, index int) bool {
+			return strings.Contains(nl[index], input)
+		},
+		Keys: &promptui.SelectKeys{
+			Prev:     promptui.Key{Code: promptui.KeyPrev, Display: promptui.KeyPrevDisplay},
+			Next:     promptui.Key{Code: promptui.KeyNext, Display: promptui.KeyNextDisplay},
+			PageUp:   promptui.Key{Code: promptui.KeyBackward, Display: promptui.KeyBackwardDisplay},
+			PageDown: promptui.Key{Code: promptui.KeyForward, Display: promptui.KeyForwardDisplay},
+			Search:   promptui.Key{Code: ':', Display: ":"},
+		},
 	}
 
 	pos, selected, err := p.Run()
@@ -37,11 +49,11 @@ func selectManyFromList(lsName string, items []string, pageSize int) ([]string, 
 	nl := append([]string{".."}, items...)
 	numSelected := 0
 	p := promptui.Select{
-		Label:        fmt.Sprintf("%s (selected:%d)", lsName, numSelected),
+		//Label:        fmt.Sprintf("%s (selected:%d)", lsName, numSelected),
 		Items:        nl,
 		Size:         pageSize,
 		CursorPos:    pos,
-		Stdout:       os.Stdout,
+		Stdout:       os.Stderr,
 		HideSelected: true,
 		Searcher: func(input string, index int) bool {
 			return strings.Contains(nl[index], input)
@@ -123,4 +135,33 @@ func selectTargets(addrs []string) ([]string, error) {
 		addrs = viper.GetStringSlice("address")
 	}
 	return addrs, nil
+}
+
+func selectPaths() ([]string, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+	if err != nil {
+		return nil, err
+	}
+	result, err := selectManyFromList("select paths", paths, 20)
+	if err != nil {
+		return nil, err
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no paths selected")
+	}
+	return result, nil
+}
+
+func readFromPrompt(label string) (string, error) {
+	p := promptui.Prompt{
+		Label:     label,
+		IsConfirm: false,
+	}
+	r, err := p.Run()
+	if err != nil {
+		return "", err
+	}
+	return r, nil
 }

@@ -40,9 +40,12 @@ var pathCmd = &cobra.Command{
 			return err
 		}
 		if search {
+			nl := make([]string, len(paths)+1)
+			nl[0] = ".."
+			copy(nl[1:], paths)
 			p := promptui.Select{
 				Label:        "select path",
-				Items:        append([]string{".."}, paths...),
+				Items:        nl,
 				Size:         10,
 				Stdout:       os.Stdout,
 				HideSelected: true,
@@ -55,9 +58,9 @@ var pathCmd = &cobra.Command{
 							if kw == "" {
 								continue
 							}
-							result = result && !strings.Contains(paths[index], kw)
+							result = result && !strings.Contains(nl[index], kw)
 						} else {
-							result = result && strings.Contains(paths[index], kw)
+							result = result && strings.Contains(nl[index], kw)
 						}
 					}
 					return result
@@ -192,7 +195,22 @@ func getPaths(ctx context.Context, file string, search bool) ([]string, error) {
 	if err := ms.Read(file); err != nil {
 		return nil, err
 	}
-
+	modules := make([]string, 0, len(ms.Modules))
+	for m := range ms.Modules {
+		modules = append(modules, m)
+	}
+	var module string
+	var err error
+	if len(modules) > 1 {
+		_, module, err = selectFromList("select module", modules, 1, 10)
+		if err != nil {
+			return nil, err
+		}
+	} else if len(modules) == 1 {
+		module = modules[0]
+	} else {
+		return nil, fmt.Errorf("no module found in file %s", file)
+	}
 	mod, ok := ms.Modules[module]
 	if !ok {
 		return nil, fmt.Errorf("module %s not found", module)

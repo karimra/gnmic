@@ -58,19 +58,9 @@ var subscribeCmd = &cobra.Command{
 			return err
 		}
 		if len(viper.GetStringSlice("sub-path")) == 0 && viper.GetString("yang-file") != "" {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+			result, err := selectPaths()
 			if err != nil {
 				return err
-			}
-			result, err := selectManyFromList("select paths", paths, 20)
-			if err != nil {
-				return err
-			}
-			if len(result) == 0 {
-				fmt.Println("Err: no paths selected")
-				return nil
 			}
 			viper.Set("sub-path", result)
 		} else {

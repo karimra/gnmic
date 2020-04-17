@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/gnxi/utils/xpath"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/spf13/cobra"
@@ -47,7 +48,7 @@ var rootCmd = &cobra.Command{
 	Short: "run gnmi rpcs from the terminal",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		_, cmdName, err := selectFromList("select cmd", []string{
-			"..",
+			//
 			"path",
 			"capabilities",
 			"get",
@@ -60,6 +61,7 @@ var rootCmd = &cobra.Command{
 		if cmdName == ".." {
 			return nil
 		}
+
 		switch cmdName {
 		case "path":
 			search = true
@@ -69,7 +71,99 @@ var rootCmd = &cobra.Command{
 		case "get":
 			return getCmd.RunE(getCmd, nil)
 		case "set":
-			//return setCmd.RunE(setCmd, nil)
+			addresses, err := selectTargets(viper.GetStringSlice("address"))
+			if err != nil {
+				return err
+			}
+			if len(addresses) == 0 {
+				return errors.New("no address provided")
+			}
+			viper.Set("address", addresses)
+			_, setType, err := selectFromList("select set type", []string{"update", "replace", "delete"}, 1, 4)
+			if err != nil {
+				return err
+			}
+			switch setType {
+			case "..":
+				return nil
+			case "update":
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+				if err != nil {
+					return err
+				}
+				_, sp, err := selectFromList("select path", paths, 1, 15)
+				if err != nil {
+					return err
+				}
+				switch sp {
+				default:
+					fmt.Println("enter type and value (type:::value):")
+					v, err := readFromPrompt(sp)
+					if err != nil {
+						return err
+					}
+					viper.Set("update", strings.Join([]string{sp, v}, ":::"))
+				case "..":
+					return nil
+				}
+			case "replace":
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+				if err != nil {
+					return err
+				}
+				_, sp, err := selectFromList("select path", paths, 1, 15)
+				if err != nil {
+					return err
+				}
+				switch sp {
+				default:
+					fmt.Println("enter type and value (type:::value):")
+					v, err := readFromPrompt(sp)
+					if err != nil {
+						return err
+					}
+					viper.Set("replace", strings.Join([]string{sp, v}, ":::"))
+				case "..":
+					return nil
+				}
+			case "delete":
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+				if err != nil {
+					return err
+				}
+				_, sp, err := selectFromList("select path", paths, 1, 15)
+				if err != nil {
+					return err
+				}
+				switch sp {
+				default:
+					gnmiPath, err := xpath.ToGNMIPath(sp)
+					if err != nil {
+						return err
+					}
+					for _, pe := range gnmiPath.GetElem() {
+						if pe.GetKey() != nil {
+							for k := range pe.GetKey() {
+								v, err := readFromPrompt(fmt.Sprintf("enter value for %s[%s=*]", pe.GetName(), k))
+								if err != nil {
+									return err
+								}
+								pe.Key[k] = v
+							}
+						}
+					}
+					viper.Set("delete", gnmiPathToXPath(gnmiPath))
+				case "..":
+					return nil
+				}
+			}
+			return setCmd.RunE(setCmd, nil)
 		case "subscribe":
 			return subscribeCmd.RunE(subscribeCmd, nil)
 		}

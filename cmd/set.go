@@ -44,10 +44,10 @@ var setCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var err error
 		addresses := viper.GetStringSlice("address")
-		addresses, err = selectTargets(addresses)
-		if err != nil {
-			return err
-		}
+		// addresses, err = selectTargets(addresses)
+		// if err != nil {
+		// 	return err
+		// }
 		if len(addresses) > 1 {
 			fmt.Println("[warning] running set command on multiple targets")
 		}
