@@ -44,16 +44,9 @@ var setCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var err error
 		addresses := viper.GetStringSlice("address")
-		addresses, err = selectManyWithAddFromList("select targets", addresses)
+		addresses, err = selectTargets(addresses)
 		if err != nil {
 			return err
-		}
-		if len(addresses) == 0 {
-			fmt.Println("no grpc server address specified")
-			return nil
-		}
-		if addresses[0] == "ALL" {
-			addresses = viper.GetStringSlice("address")
 		}
 		if len(addresses) > 1 {
 			fmt.Println("[warning] running set command on multiple targets")

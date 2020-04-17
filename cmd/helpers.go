@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/manifoldco/promptui"
+	"github.com/spf13/viper"
 )
 
 func selectFromList(lsName string, items []string, initialPos, pageSize int) (int, string, error) {
@@ -106,4 +107,20 @@ LOOP:
 	numSelected++
 	result = append(result, choice)
 	goto LOOP
+}
+
+func selectTargets(addrs []string) ([]string, error) {
+	var err error
+	addrs, err = selectManyWithAddFromList("select targets", addrs)
+	if err != nil {
+		return nil, err
+	}
+	if len(addrs) == 0 {
+		fmt.Println("no grpc server address specified")
+		return nil, nil
+	}
+	if addrs[0] == "ALL" {
+		addrs = viper.GetStringSlice("address")
+	}
+	return addrs, nil
 }
