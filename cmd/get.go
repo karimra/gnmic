@@ -39,10 +39,18 @@ var getCmd = &cobra.Command{
 		debug := viper.GetBool("debug")
 		var err error
 		addresses := viper.GetStringSlice("address")
+		addresses, err = selectManyWithAddFromList("select targets", addresses)
+		if err != nil {
+			return err
+		}
 		if len(addresses) == 0 {
 			fmt.Println("no grpc server address specified")
 			return nil
 		}
+		if addresses[0] == "ALL" {
+			addresses = viper.GetStringSlice("address")
+		}
+
 		if len(viper.GetStringSlice("get-path")) == 0 && viper.GetString("yang-file") != "" {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -236,7 +244,7 @@ var getCmd = &cobra.Command{
 					}
 					fmt.Println()
 				}
-			//fmt.Println()
+				//fmt.Println()
 				lock.Unlock()
 			}(addr)
 		}

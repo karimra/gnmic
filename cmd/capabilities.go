@@ -45,6 +45,7 @@ var capabilitiesCmd = &cobra.Command{
 			return err
 		}
 		if len(addresses) == 0 {
+			fmt.Println("no grpc server address specified")
 			return nil
 		}
 		if addresses[0] == "ALL" {

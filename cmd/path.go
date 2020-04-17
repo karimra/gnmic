@@ -42,7 +42,7 @@ var pathCmd = &cobra.Command{
 		if search {
 			p := promptui.Select{
 				Label:        "select path",
-				Items:        append(paths),
+				Items:        append([]string{".."}, paths...),
 				Size:         10,
 				Stdout:       os.Stdout,
 				HideSelected: true,
