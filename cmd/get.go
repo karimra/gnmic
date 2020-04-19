@@ -49,10 +49,7 @@ var getCmd = &cobra.Command{
 				return err
 			}
 			viper.Set("get-path", result)
-		} else {
-			fmt.Println("Err: provide path(s) or a yang file to choose paths from")
-			return nil
-		}
+		} 
 		username := viper.GetString("username")
 		if username == "" {
 			if username, err = readUsername(); err != nil {
