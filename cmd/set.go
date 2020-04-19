@@ -71,99 +71,56 @@ var setCmd = &cobra.Command{
 		updateValues := viper.GetStringSlice("update-value")
 		replaceValues := viper.GetStringSlice("replace-value")
 		delimiter := viper.GetString("delimiter")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+		if err != nil {
+			return err
+		}
 		if (len(deletes)+len(updates)+len(replaces)) == 0 && (len(updatePaths)+len(replacePaths)) == 0 {
 		SET:
 			_, setType, err := selectFromList("select set type", []string{"update", "replace", "delete"}, 1, 4)
 			if err != nil {
 				return err
 			}
+			var sp string
+			if setType == ".." {
+				goto DONE
+			}
+			if viper.GetString("yang-file") == "" {
+				sp, err = readFromPrompt(fmt.Sprintf("enter set %s path", setType), "")
+				if err != nil {
+					return err
+				}
+			} else {
+				_, sp, err = selectFromList("select path", paths, 1, 15)
+				if err != nil {
+					return err
+				}
+			}
 			switch setType {
 			case "..":
-			case "update":
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+			case "update", "replace":
+				sp, err = setPathKeys(sp)
 				if err != nil {
 					return err
 				}
-				_, sp, err := selectFromList("select path", paths, 1, 15)
+				fmt.Println("enter type and value (type:::value):")
+				v, err := readFromPrompt(fmt.Sprintf("enter value for '%s'", sp), "")
 				if err != nil {
 					return err
 				}
-				switch sp {
-				default:
-					sp, err = setPathKeys(sp)
-					if err != nil {
-						return err
-					}
-					fmt.Println("enter type and value (type:::value):")
-					v, err := readFromPrompt(sp, "")
-					if err != nil {
-						return err
-					}
-					viper.Set("update", strings.Join([]string{sp, v}, ":::"))
-				case "..":
-				}
-				goto SET
-			case "replace":
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
-				if err != nil {
-					return err
-				}
-				_, sp, err := selectFromList("select path", paths, 1, 15)
-				if err != nil {
-					return err
-				}
-				switch sp {
-				default:
-					sp, err = setPathKeys(sp)
-					if err != nil {
-						return err
-					}
-					fmt.Println("enter type and value (type:::value):")
-					v, err := readFromPrompt(sp, "")
-					if err != nil {
-						return err
-					}
-					viper.Set("replace", strings.Join([]string{sp, v}, ":::"))
-				case "..":
-				}
+				viper.Set(setType, strings.Join([]string{sp, v}, ":::"))
 				goto SET
 			case "delete":
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				paths, err := getPaths(ctx, viper.GetString("yang-file"), true)
+				sp, err = setPathKeys(sp)
 				if err != nil {
 					return err
 				}
-				_, sp, err := selectFromList("select path", paths, 1, 15)
-				if err != nil {
-					return err
-				}
-				switch sp {
-				default:
-					gnmiPath, err := xpath.ToGNMIPath(sp)
-					if err != nil {
-						return err
-					}
-					for _, pe := range gnmiPath.GetElem() {
-						if pe.GetKey() != nil {
-							for k := range pe.GetKey() {
-								v, err := readFromPrompt(fmt.Sprintf("enter value for %s[%s=*]", pe.GetName(), k), "")
-								if err != nil {
-									return err
-								}
-								pe.Key[k] = v
-							}
-						}
-					}
-					viper.Set("delete", gnmiPathToXPath(gnmiPath))
-				case "..":
-				}
+				viper.Set("delete", sp)
 				goto SET
 			}
+		DONE:
 			deletes = viper.GetStringSlice("delete")
 			updates = viper.GetString("update")
 			replaces = viper.GetString("replace")

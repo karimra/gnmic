@@ -23,12 +23,14 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/ssh/terminal"
 	"google.golang.org/grpc"
@@ -46,33 +48,14 @@ var rootCmd = &cobra.Command{
 	Use:   "gnmiClient",
 	Short: "run gnmi rpcs from the terminal",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, cmdName, err := selectFromList("select cmd", []string{
-			//
-			"path",
-			"capabilities",
-			"get",
-			"set",
-			"subscribe"},
-			1, 6)
+		c, err := selectChildCmd(cmd)
 		if err != nil {
 			return err
 		}
-		if cmdName == ".." {
-			return nil
-		}
-
-		switch cmdName {
-		case "path":
-			search = true
-			return pathCmd.RunE(pathCmd, nil)
-		case "capabilities":
-			return capabilitiesCmd.RunE(capabilitiesCmd, nil)
-		case "get":
-			return getCmd.RunE(getCmd, nil)
-		case "set":
-			return setCmd.RunE(setCmd, nil)
-		case "subscribe":
-			return subscribeCmd.RunE(subscribeCmd, nil)
+		if c.RunE != nil {
+			return c.RunE(c, nil)
+		} else if c.Run != nil {
+			c.Run(c, nil)
 		}
 		return nil
 	},
@@ -254,4 +237,39 @@ func gather(ctx context.Context, c chan string, ls *[]string) {
 			return
 		}
 	}
+}
+
+func selectChildCmd(cmd *cobra.Command) (*cobra.Command, error) {
+	if !cmd.HasSubCommands() {
+		return nil, nil
+	}
+	names := make([]string, 0, len(cmd.Commands()))
+	for _, c := range cmd.Commands() {
+		names = append(names, c.Name())
+	}
+	sort.Strings(names)
+	_, cn, err := selectFromList("select cmd", names, 0, len(names)+1)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range cmd.Commands() {
+		if c.Name() == cn {
+			return c, nil
+		}
+	}
+	return nil, nil
+}
+
+func setCmdFlags(cmd *cobra.Command) error {
+	if cmd.HasAvailableLocalFlags() {
+		cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+			v, err := readFromPrompt(fmt.Sprintf("enter value for %s (%s)", flag.Name, flag.Usage), flag.DefValue)
+			if err != nil {
+				fmt.Printf("%v\n", err)
+				return
+			}
+			flag.Value.Set(v)
+		})
+	}
+	return nil
 }

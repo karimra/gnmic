@@ -43,13 +43,25 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
 		if len(viper.GetStringSlice("get-path")) == 0 && viper.GetString("yang-file") != "" {
 			result, err := selectPaths()
 			if err != nil {
 				return err
 			}
 			viper.Set("get-path", result)
-		} 
+		} else if len(viper.GetStringSlice("get-path")) == 0 {
+			pathPrefix, err := readFromPrompt("enter path prefix", viper.GetString("get-prefix"))
+			if err != nil {
+				return err
+			}
+			viper.Set("get-prefix", pathPrefix)
+			path, err := readFromPrompt("enter path", "")
+			if err != nil {
+				return err
+			}
+			viper.Set("get-path", path)
+		}
 		username := viper.GetString("username")
 		if username == "" {
 			if username, err = readUsername(); err != nil {
@@ -235,7 +247,7 @@ var getCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(getCmd)
 
-	getCmd.Flags().StringSliceP("path", "", []string{""}, "get request paths")
+	getCmd.Flags().StringSliceP("path", "", nil, "get request paths")
 	getCmd.Flags().StringP("prefix", "", "", "get request prefix")
 	getCmd.Flags().StringP("model", "", "", "get request model")
 	getCmd.Flags().StringP("type", "t", "ALL", "the type of data that is requested from the target. one of: ALL, CONFIG, STATE, OPERATIONAL")

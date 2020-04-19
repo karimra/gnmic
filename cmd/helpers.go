@@ -199,6 +199,9 @@ func readFromPrompt(label, defValue string) (string, error) {
 }
 
 func setPathKeys(p string) (string, error) {
+	if !strings.Contains(p, "*") {
+		return p, nil
+	}
 	gnmiPath, err := xpath.ToGNMIPath(p)
 	if err != nil {
 		return "", err
