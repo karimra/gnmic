@@ -70,7 +70,6 @@ var rootCmd = &cobra.Command{
 		case "get":
 			return getCmd.RunE(getCmd, nil)
 		case "set":
-
 			return setCmd.RunE(setCmd, nil)
 		case "subscribe":
 			return subscribeCmd.RunE(subscribeCmd, nil)

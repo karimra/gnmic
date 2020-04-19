@@ -17,7 +17,6 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -229,7 +228,13 @@ func init() {
 func createSubscribeRequest() (*gnmi.SubscribeRequest, error) {
 	paths := viper.GetStringSlice("sub-path")
 	if len(paths) == 0 {
-		return nil, errors.New("no path provided")
+		var err error
+		paths, err = selectPaths()
+		if err != nil {
+			return nil, err
+		}
+		viper.Set("sub-path", paths)
+		paths = viper.GetStringSlice("sub-path")
 	}
 	gnmiPrefix, err := xpath.ToGNMIPath(viper.GetString("sub-prefix"))
 	if err != nil {
