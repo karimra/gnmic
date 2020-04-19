@@ -99,6 +99,10 @@ var rootCmd = &cobra.Command{
 				}
 				switch sp {
 				default:
+					sp, err = setPathKeys(sp)
+					if err != nil {
+						return err
+					}
 					fmt.Println("enter type and value (type:::value):")
 					v, err := readFromPrompt(sp)
 					if err != nil {
@@ -121,6 +125,10 @@ var rootCmd = &cobra.Command{
 				}
 				switch sp {
 				default:
+					sp, err = setPathKeys(sp)
+					if err != nil {
+						return err
+					}
 					fmt.Println("enter type and value (type:::value):")
 					v, err := readFromPrompt(sp)
 					if err != nil {
@@ -328,7 +336,6 @@ func loadCerts() ([]tls.Certificate, *x509.CertPool, error) {
 
 	return []tls.Certificate{certificate}, certPool, nil
 }
-
 func printer(ctx context.Context, c chan string) {
 	for {
 		select {
