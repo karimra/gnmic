@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/gnxi/utils/xpath"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/viper"
 )
@@ -14,7 +15,9 @@ func selectFromList(lsName string, items []string, initialPos, pageSize int) (in
 	if pageSize <= 0 {
 		pageSize = 10
 	}
-	nl := append([]string{".."}, items...)
+	nl := make([]string, len(items)+1)
+	nl[0] = ".."
+	copy(nl[1:], items)
 	p := promptui.Select{
 		Label:        lsName,
 		Items:        nl,
@@ -23,7 +26,20 @@ func selectFromList(lsName string, items []string, initialPos, pageSize int) (in
 		Stdout:       os.Stderr,
 		HideSelected: true,
 		Searcher: func(input string, index int) bool {
-			return strings.Contains(nl[index], input)
+			kws := strings.Split(input, " ")
+			result := true
+			for _, kw := range kws {
+				if strings.HasPrefix(kw, "!") {
+					kw = strings.TrimLeft(kw, "!")
+					if kw == "" {
+						continue
+					}
+					result = result && !strings.Contains(nl[index], kw)
+				} else {
+					result = result && strings.Contains(nl[index], kw)
+				}
+			}
+			return result
 		},
 		Keys: &promptui.SelectKeys{
 			Prev:     promptui.Key{Code: promptui.KeyPrev, Display: promptui.KeyPrevDisplay},
@@ -46,7 +62,9 @@ func selectManyFromList(lsName string, items []string, pageSize int) ([]string, 
 	choice := ""
 	var err error
 	pos := 0
-	nl := append([]string{".."}, items...)
+	nl := make([]string, len(items)+1)
+	nl[0] = ".."
+	copy(nl[1:], items)
 	numSelected := 0
 	p := promptui.Select{
 		//Label:        fmt.Sprintf("%s (selected:%d)", lsName, numSelected),
@@ -56,7 +74,20 @@ func selectManyFromList(lsName string, items []string, pageSize int) ([]string, 
 		Stdout:       os.Stderr,
 		HideSelected: true,
 		Searcher: func(input string, index int) bool {
-			return strings.Contains(nl[index], input)
+			kws := strings.Split(input, " ")
+			result := true
+			for _, kw := range kws {
+				if strings.HasPrefix(kw, "!") {
+					kw = strings.TrimLeft(kw, "!")
+					if kw == "" {
+						continue
+					}
+					result = result && !strings.Contains(nl[index], kw)
+				} else {
+					result = result && strings.Contains(nl[index], kw)
+				}
+			}
+			return result
 		},
 		Keys: &promptui.SelectKeys{
 			Prev:     promptui.Key{Code: promptui.KeyPrev, Display: promptui.KeyPrevDisplay},
@@ -68,14 +99,14 @@ func selectManyFromList(lsName string, items []string, pageSize int) ([]string, 
 	}
 LOOP:
 	p.Label = fmt.Sprintf("%s (selected:%d)", lsName, numSelected)
-	pos, choice, err = p.Run()
+	_, choice, err = p.Run()
 	if err != nil {
 		return nil, err
 	}
 	if choice == ".." {
 		return result, nil
 	}
-	p.CursorPos = pos
+	//p.CursorPos = pos
 	for _, r := range result {
 		if r == choice {
 			goto LOOP
@@ -154,14 +185,34 @@ func selectPaths() ([]string, error) {
 	return result, nil
 }
 
-func readFromPrompt(label string) (string, error) {
+func readFromPrompt(label, defValue string) (string, error) {
 	p := promptui.Prompt{
 		Label:     label,
 		IsConfirm: false,
+		Default:   defValue,
 	}
 	r, err := p.Run()
 	if err != nil {
 		return "", err
 	}
 	return r, nil
+}
+
+func setPathKeys(p string) (string, error) {
+	gnmiPath, err := xpath.ToGNMIPath(p)
+	if err != nil {
+		return "", err
+	}
+	for _, pe := range gnmiPath.GetElem() {
+		if pe.GetKey() != nil {
+			for k := range pe.GetKey() {
+				v, err := readFromPrompt(fmt.Sprintf("enter value for %s[%s=*]", pe.GetName(), k), "*")
+				if err != nil {
+					return "", err
+				}
+				pe.Key[k] = v
+			}
+		}
+	}
+	return gnmiPathToXPath(gnmiPath), nil
 }
