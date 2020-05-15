@@ -33,7 +33,7 @@ import (
 )
 
 type msg struct {
-	Timestamp int64     `json:"timestamp,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitempty"`
 	Prefix    string    `json:"prefix,omitempty"`
 	Updates   []*update `json:"updates,omitempty"`
 	Deletes   []string  `json:"deletes,omitempty"`
@@ -319,7 +319,7 @@ func printSubscribeResponse(printPrefix string, resp *gnmi.SubscribeResponse_Upd
 	}
 	fmt.Printf("%supdate received at %s\n", printPrefix, time.Now().Format(time.RFC3339Nano))
 	msg := new(msg)
-	msg.Timestamp = resp.Update.Timestamp
+	msg.Timestamp = time.Unix(0, resp.Update.Timestamp)
 	msg.Prefix = gnmiPathToXPath(resp.Update.Prefix)
 	for i, upd := range resp.Update.Update {
 		pathElems := make([]string, 0, len(upd.Path.Elem))

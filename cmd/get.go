@@ -22,6 +22,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/gnxi/utils/xpath"
 	"github.com/openconfig/gnmi/proto/gnmi"
@@ -189,7 +190,7 @@ func printGetResponse(printPrefix string, response *gnmi.GetResponse) {
 	}
 	for _, notif := range response.Notification {
 		msg := new(msg)
-		msg.Timestamp = notif.Timestamp
+		msg.Timestamp = time.Unix(0, notif.Timestamp)
 		msg.Prefix = gnmiPathToXPath(notif.Prefix)
 		for i, upd := range notif.Update {
 			if upd.Val == nil {
