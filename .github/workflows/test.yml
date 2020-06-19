@@ -17,8 +17,14 @@ jobs:
       - run: go test -cover ./...
         env:
           CGO_ENABLED: 0
-          
-      - name: Staticcheck
-        run: |
-          go get -u honnef.co/go/tools/cmd/staticcheck
-          staticcheck ./... 
+
+  golangci:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v1
+        with:
+          # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
+          version: v1.27
