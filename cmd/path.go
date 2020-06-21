@@ -89,7 +89,7 @@ var pathCmd = &cobra.Command{
 						}
 					}
 					if result {
-						count++
+						count++ //nolint:ineffassign
 					}
 					return result
 				},
