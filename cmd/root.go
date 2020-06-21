@@ -210,7 +210,7 @@ func createGrpcConn(ctx context.Context, address string) (*grpc.ClientConn, erro
 		opts = append(opts, grpc.WithDisableRetry())
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	}
-	timeoutCtx, _ := context.WithTimeout(ctx, viper.GetDuration("timeout"))
+	timeoutCtx, _ := context.WithTimeout(ctx, viper.GetDuration("timeout")) //nolint:govet
 	conn, err := grpc.DialContext(timeoutCtx, address, opts...)
 	if err != nil {
 		return nil, err
