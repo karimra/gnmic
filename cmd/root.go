@@ -79,6 +79,7 @@ var rootCmd = &cobra.Command{
 		logger = log.New(f, "", log.LstdFlags|log.Lmicroseconds)
 		logger.SetFlags(log.LstdFlags | log.Lmicroseconds)
 		if viper.GetBool("debug") {
+			//nolint:staticcheck
 			grpclog.SetLogger(logger) //lint:ignore SA1019 see https://github.com/karimra/gnmiClient/issues/59
 		}
 	},
