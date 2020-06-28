@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -54,12 +55,16 @@ var capabilitiesCmd = &cobra.Command{
 	},
 }
 
-func reqCapability(ctx context.Context, target *target, wg *sync.WaitGroup, m *sync.Mutex) error {
+func reqCapability(ctx context.Context, target *target, wg *sync.WaitGroup, m *sync.Mutex) {
 	defer wg.Done()
 	conn, err := createGrpcConn(ctx, target.Address, nil)
 	if err != nil {
-		logger.Printf("connection to %s failed: %v", target.Address, err)
-		return err
+		if errors.Is(err, context.DeadlineExceeded) {
+			logger.Printf("gRPC connection to %s failed to establish in a configured %s interval", target.Address, viper.Get("timeout"))
+		} else {
+			logger.Printf("connection to %s failed: %v", target.Address, err)
+		}
+		return
 	}
 	client := gnmi.NewGNMIClient(conn)
 
@@ -72,12 +77,10 @@ func reqCapability(ctx context.Context, target *target, wg *sync.WaitGroup, m *s
 	response, err := client.Capabilities(nctx, req)
 	if err != nil {
 		logger.Printf("error sending capabilities request: %v", err)
-		return err
 	}
 	m.Lock()
 	printCapResponse(response, target.Address)
 	m.Unlock()
-	return nil
 }
 
 func printCapResponse(r *gnmi.CapabilityResponse, address string) {

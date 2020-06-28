@@ -17,6 +17,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -62,7 +63,11 @@ func getRequest(ctx context.Context, req *gnmi.GetRequest, target *target, wg *s
 	defer wg.Done()
 	conn, err := createGrpcConn(ctx, target.Address, nil)
 	if err != nil {
-		logger.Printf("connection to %s failed: %v", target.Address, err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			logger.Printf("gRPC connection to %s failed to establish in a configured %s interval", target.Address, viper.Get("timeout"))
+		} else {
+			logger.Printf("connection to %s failed: %v", target.Address, err)
+		}
 		return
 	}
 	client := gnmi.NewGNMIClient(conn)

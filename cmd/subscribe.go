@@ -157,7 +157,11 @@ func subRequest(ctx context.Context,
 	defer wg.Done()
 	conn, err := createGrpcConn(ctx, target.Address, clientMetrics)
 	if err != nil {
-		logger.Printf("connection to %s failed: %v", target.Address, err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			logger.Printf("gRPC connection to %s failed to establish in a configured %s interval", target.Address, viper.Get("timeout"))
+		} else {
+			logger.Printf("connection to %s failed: %v", target.Address, err)
+		}
 		return
 	}
 
