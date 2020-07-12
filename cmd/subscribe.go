@@ -327,7 +327,8 @@ func getSubscriptions() (map[string]*collector.SubscriptionConfig, error) {
 		sub.Qos = viper.GetUint32("qos")
 		sub.StreamMode = viper.GetString("subscribe-stream-mode")
 		sub.HeartbeatInterval = viper.GetDuration("subscribe-heartbeat-interval")
-		sub.SampleInterval = viper.GetDuration("subscribe-sample-interval")
+		si := viper.GetDuration("subscribe-sample-interval")
+		sub.SampleInterval = &si
 		sub.SuppressRedundant = viper.GetBool("subscribe-suppress-redundant")
 		sub.UpdatesOnly = viper.GetBool("subscribe-updates-only")
 		sub.Models = viper.GetStringSlice("models")
