@@ -13,6 +13,16 @@ builds:
       - 386
     hooks:
       post: upx "{{ .Path }}"
+dockers:
+  - goos: linux
+    goarch: amd64
+    binaries:
+      - gnmic
+    image_templates:
+      - "gnmic/gnmic:latest"
+      - 'gnmic/gnmic:{{ replace .Version "v" ""}}'
+    dockerfile: goreleaser.dockerfile
+    skip_push: false
 archives:
   - replacements:
       darwin: Darwin
