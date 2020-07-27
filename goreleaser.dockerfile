@@ -6,4 +6,4 @@ LABEL repo="https://github.com/karimra/gnmic"
 
 COPY gnmic /app/gnmic
 ENTRYPOINT [ "/app/gnmic" ]
-CMD [ "version" ]
+CMD [ "help" ]
