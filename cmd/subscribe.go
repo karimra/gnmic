@@ -170,7 +170,7 @@ func init() {
 	subscribeCmd.Flags().StringP("prefix", "", "", "subscribe request prefix")
 	subscribeCmd.Flags().StringArrayVarP(&paths, "path", "", []string{}, "subscribe request paths")
 	//subscribeCmd.MarkFlagRequired("path")
-	subscribeCmd.Flags().Int32P("qos", "q", 0, "qos marking")
+	subscribeCmd.Flags().Uint32P("qos", "q", 0, "qos marking")
 	subscribeCmd.Flags().BoolP("updates-only", "", false, "only updates to current state should be sent")
 	subscribeCmd.Flags().StringP("mode", "", "stream", "one of: once, stream, poll")
 	subscribeCmd.Flags().StringP("stream-mode", "", "target-defined", "one of: on-change, sample, target-defined")
