@@ -20,11 +20,16 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/karimra/gnmic/cmd"
+	"github.com/spf13/pflag"
 )
 
 func main() {
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
+	pprofAddress := pflag.String("pprof", "", "pprof server address")
+	pflag.Parse()
+	if pprofAddress != nil {
+		go func() {
+			log.Println(http.ListenAndServe(*pprofAddress, nil))
+		}()
+	}
 	cmd.Execute()
 }
