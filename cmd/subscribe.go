@@ -63,7 +63,6 @@ var subscribeCmd = &cobra.Command{
 
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 		setupCloseHandler(cancel)
 		debug := viper.GetBool("debug")
 		targetsConfig, err := createTargets()
@@ -87,21 +86,21 @@ var subscribeCmd = &cobra.Command{
 		if debug {
 			logger.Printf("outputs: %+v", outs)
 		}
+		if coll == nil {
+			cfg := &collector.Config{
+				PrometheusAddress:   viper.GetString("prometheus-address"),
+				Debug:               viper.GetBool("debug"),
+				Format:              viper.GetString("format"),
+				TargetReceiveBuffer: viper.GetUint("target-buffer-size"),
+				RetryTimer:          viper.GetDuration("retry-timer"),
+			}
 
-		cfg := &collector.Config{
-			PrometheusAddress:   viper.GetString("prometheus-address"),
-			Debug:               viper.GetBool("debug"),
-			Format:              viper.GetString("format"),
-			TargetReceiveBuffer: viper.GetUint("target-buffer-size"),
-			RetryTimer:          viper.GetDuration("retry-timer"),
+			coll = collector.NewCollector(cfg, targetsConfig,
+				collector.WithDialOptions(createCollectorDialOpts()),
+				collector.WithSubscriptions(subscriptionsConfig),
+				collector.WithOutputs(outs),
+				collector.WithLogger(logger))
 		}
-
-		coll := collector.NewCollector(cfg, targetsConfig,
-			collector.WithDialOptions(createCollectorDialOpts()),
-			collector.WithSubscriptions(subscriptionsConfig),
-			collector.WithOutputs(outs),
-			collector.WithLogger(logger))
-
 		wg := new(sync.WaitGroup)
 		wg.Add(len(coll.Targets))
 		for name := range coll.Targets {
@@ -194,7 +193,11 @@ var subscribeCmd = &cobra.Command{
 				}
 			}()
 		}
-		coll.Start(ctx)
+		if promptMode {
+			go coll.Start(ctx)
+		} else {
+			coll.Start(ctx)
+		}
 		return nil
 	},
 	PostRun: func(cmd *cobra.Command, args []string) {
