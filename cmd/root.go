@@ -82,6 +82,7 @@ var formats = [][2]string{
 var cfgFile string
 var f io.WriteCloser
 var logger *log.Logger
+var coll *collector.Collector
 
 func rootCmdPersistentPreRunE(cmd *cobra.Command, args []string) error {
 	debug := viper.GetBool("debug")
@@ -353,8 +354,8 @@ func indent(prefix, s string) string {
 	return strings.TrimLeft(fmt.Sprintf("%s%s", prefix, strings.Join(lines, prefix)), "\n")
 }
 
-func filterModels(ctx context.Context, t *collector.Target, modelsNames []string) (map[string]*gnmi.ModelData, []string, error) {
-	capResp, err := t.Capabilities(ctx)
+func filterModels(ctx context.Context, tName string, modelsNames []string) (map[string]*gnmi.ModelData, []string, error) {
+	capResp, err := coll.Capabilities(ctx, tName)
 	if err != nil {
 		return nil, nil, err
 	}
