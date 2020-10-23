@@ -100,7 +100,7 @@ func (tc *TargetConfig) newTLS() (*tls.Config, error) {
 }
 
 // CreateGNMIClient //
-func (t *Target) CreateGNMIClient(ctx context.Context, opts ...grpc.DialOption) error {
+func (t *Target) CreateGNMIClient(ctx context.Context, opts ...grpc.DialOption) (gnmi.GNMIClient, error) {
 	if opts == nil {
 		opts = []grpc.DialOption{}
 	}
@@ -109,7 +109,7 @@ func (t *Target) CreateGNMIClient(ctx context.Context, opts ...grpc.DialOption) 
 	} else {
 		tlsConfig, err := t.Config.newTLS()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	}
@@ -117,10 +117,9 @@ func (t *Target) CreateGNMIClient(ctx context.Context, opts ...grpc.DialOption) 
 	defer cancel()
 	conn, err := grpc.DialContext(timeoutCtx, t.Config.Address, opts...)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	t.Client = gnmi.NewGNMIClient(conn)
-	return nil
+	return gnmi.NewGNMIClient(conn), nil
 }
 
 // Capabilities sends a gnmi.CapabilitiesRequest to the target *t and returns a gnmi.CapabilitiesResponse and an error
@@ -128,11 +127,7 @@ func (t *Target) Capabilities(ctx context.Context, ext ...*gnmi_ext.Extension) (
 	nctx, cancel := context.WithTimeout(ctx, t.Config.Timeout)
 	defer cancel()
 	nctx = metadata.AppendToOutgoingContext(nctx, "username", *t.Config.Username, "password", *t.Config.Password)
-	response, err := t.Client.Capabilities(nctx, &gnmi.CapabilityRequest{Extension: ext})
-	if err != nil {
-		return nil, fmt.Errorf("failed sending capabilities request: %v", err)
-	}
-	return response, nil
+	return t.Client.Capabilities(nctx, &gnmi.CapabilityRequest{Extension: ext})
 }
 
 // Get sends a gnmi.GetRequest to the target *t and returns a gnmi.GetResponse and an error
@@ -140,11 +135,7 @@ func (t *Target) Get(ctx context.Context, req *gnmi.GetRequest) (*gnmi.GetRespon
 	nctx, cancel := context.WithTimeout(ctx, t.Config.Timeout)
 	defer cancel()
 	nctx = metadata.AppendToOutgoingContext(nctx, "username", *t.Config.Username, "password", *t.Config.Password)
-	response, err := t.Client.Get(nctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed sending GetRequest to '%s': %v", t.Config.Address, err)
-	}
-	return response, nil
+	return t.Client.Get(nctx, req)
 }
 
 // Set sends a gnmi.SetRequest to the target *t and returns a gnmi.SetResponse and an error
@@ -152,11 +143,7 @@ func (t *Target) Set(ctx context.Context, req *gnmi.SetRequest) (*gnmi.SetRespon
 	nctx, cancel := context.WithTimeout(ctx, t.Config.Timeout)
 	defer cancel()
 	nctx = metadata.AppendToOutgoingContext(nctx, "username", *t.Config.Username, "password", *t.Config.Password)
-	response, err := t.Client.Set(nctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed sending SetRequest to '%s': %v", t.Config.Address, err)
-	}
-	return response, nil
+	return t.Client.Set(nctx, req)
 }
 
 // Subscribe sends a gnmi.SubscribeRequest to the target *t, responses and error are sent to the target channels
