@@ -15,6 +15,7 @@ import (
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/karimra/gnmic/outputs"
 	"github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/openconfig/gnmi/proto/gnmi_ext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
@@ -163,7 +164,8 @@ func (c *Collector) InitTarget(tc *TargetConfig) {
 // Subscribe //
 func (c *Collector) Subscribe(ctx context.Context, tName string) error {
 	if t, ok := c.Targets[tName]; ok {
-		if err := t.CreateGNMIClient(ctx, c.dialOpts...); err != nil {
+		var err error
+		if t.Client, err = t.CreateGNMIClient(ctx, c.dialOpts...); err != nil {
 			return err
 		}
 		c.logger.Printf("target '%s' gNMI client created", t.Config.Name)
@@ -299,4 +301,58 @@ func (c *Collector) subscriptionMode(name string) string {
 		return strings.ToUpper(sub.Mode)
 	}
 	return ""
+}
+
+func (c *Collector) Capabilities(ctx context.Context, targetName string, ext ...*gnmi_ext.Extension) (*gnmi.CapabilityResponse, error) {
+	if t, ok := c.Targets[targetName]; ok {
+		if t.Client == nil {
+			client, err := t.CreateGNMIClient(ctx, c.dialOpts...)
+			if err != nil {
+				return nil, err
+			}
+			c.m.Lock()
+			t.Client = client
+			c.m.Unlock()
+		}
+		return t.Capabilities(ctx)
+	}
+	return nil, fmt.Errorf("unknown target %s", targetName)
+}
+
+func (c *Collector) Get(ctx context.Context, targetName string, req *gnmi.GetRequest) (*gnmi.GetResponse, error) {
+	if t, ok := c.Targets[targetName]; ok {
+		if t.Client == nil {
+			client, err := t.CreateGNMIClient(ctx, c.dialOpts...)
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					return nil, fmt.Errorf("failed to create a gRPC client for target '%s', timeout (%s) reached", t.Config.Name, t.Config.Timeout)
+				}
+				return nil, fmt.Errorf("failed to create a gRPC client for target '%s' : %v", t.Config.Name, err)
+			}
+			c.m.Lock()
+			t.Client = client
+			c.m.Unlock()
+		}
+		return t.Get(ctx, req)
+	}
+	return nil, fmt.Errorf("unknown target %s", targetName)
+}
+
+func (c *Collector) Set(ctx context.Context, targetName string, req *gnmi.SetRequest) (*gnmi.SetResponse, error) {
+	if t, ok := c.Targets[targetName]; ok {
+		if t.Client == nil {
+			client, err := t.CreateGNMIClient(ctx, c.dialOpts...)
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					return nil, fmt.Errorf("failed to create a gRPC client for target '%s', timeout (%s) reached", t.Config.Name, t.Config.Timeout)
+				}
+				return nil, fmt.Errorf("failed to create a gRPC client for target '%s' : %v", t.Config.Name, err)
+			}
+			c.m.Lock()
+			t.Client = client
+			c.m.Unlock()
+		}
+		return t.Set(ctx, req)
+	}
+	return nil, fmt.Errorf("unknown target %s", targetName)
 }
