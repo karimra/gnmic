@@ -164,11 +164,19 @@ func (c *Collector) InitTarget(tc *TargetConfig) {
 // Subscribe //
 func (c *Collector) Subscribe(ctx context.Context, tName string) error {
 	if t, ok := c.Targets[tName]; ok {
-		var err error
-		if t.Client, err = t.CreateGNMIClient(ctx, c.dialOpts...); err != nil {
-			return err
+		if t.Client == nil {
+			ctx, cancel := context.WithCancel(ctx)
+			client, err := t.CreateGNMIClient(ctx, c.dialOpts...)
+			if err != nil {
+				cancel()
+				return err
+			}
+			c.m.Lock()
+			t.canelFn = cancel
+			t.Client = client
+			c.m.Unlock()
+			c.logger.Printf("target '%s' gNMI client created", t.Config.Name)
 		}
-		c.logger.Printf("target '%s' gNMI client created", t.Config.Name)
 		for _, sc := range t.Subscriptions {
 			req, err := sc.CreateSubscribeRequest()
 			if err != nil {
@@ -306,13 +314,17 @@ func (c *Collector) subscriptionMode(name string) string {
 func (c *Collector) Capabilities(ctx context.Context, targetName string, ext ...*gnmi_ext.Extension) (*gnmi.CapabilityResponse, error) {
 	if t, ok := c.Targets[targetName]; ok {
 		if t.Client == nil {
+			ctx, cancel := context.WithCancel(ctx)
 			client, err := t.CreateGNMIClient(ctx, c.dialOpts...)
 			if err != nil {
+				cancel()
 				return nil, err
 			}
 			c.m.Lock()
+			t.canelFn = cancel
 			t.Client = client
 			c.m.Unlock()
+			c.logger.Printf("target '%s' gNMI client created", t.Config.Name)
 		}
 		return t.Capabilities(ctx)
 	}
@@ -322,16 +334,17 @@ func (c *Collector) Capabilities(ctx context.Context, targetName string, ext ...
 func (c *Collector) Get(ctx context.Context, targetName string, req *gnmi.GetRequest) (*gnmi.GetResponse, error) {
 	if t, ok := c.Targets[targetName]; ok {
 		if t.Client == nil {
+			ctx, cancel := context.WithCancel(ctx)
 			client, err := t.CreateGNMIClient(ctx, c.dialOpts...)
 			if err != nil {
-				if errors.Is(err, context.DeadlineExceeded) {
-					return nil, fmt.Errorf("failed to create a gRPC client for target '%s', timeout (%s) reached", t.Config.Name, t.Config.Timeout)
-				}
-				return nil, fmt.Errorf("failed to create a gRPC client for target '%s' : %v", t.Config.Name, err)
+				cancel()
+				return nil, err
 			}
 			c.m.Lock()
+			t.canelFn = cancel
 			t.Client = client
 			c.m.Unlock()
+			c.logger.Printf("target '%s' gNMI client created", t.Config.Name)
 		}
 		return t.Get(ctx, req)
 	}
@@ -341,16 +354,17 @@ func (c *Collector) Get(ctx context.Context, targetName string, req *gnmi.GetReq
 func (c *Collector) Set(ctx context.Context, targetName string, req *gnmi.SetRequest) (*gnmi.SetResponse, error) {
 	if t, ok := c.Targets[targetName]; ok {
 		if t.Client == nil {
+			ctx, cancel := context.WithCancel(ctx)
 			client, err := t.CreateGNMIClient(ctx, c.dialOpts...)
 			if err != nil {
-				if errors.Is(err, context.DeadlineExceeded) {
-					return nil, fmt.Errorf("failed to create a gRPC client for target '%s', timeout (%s) reached", t.Config.Name, t.Config.Timeout)
-				}
-				return nil, fmt.Errorf("failed to create a gRPC client for target '%s' : %v", t.Config.Name, err)
+				cancel()
+				return nil, err
 			}
 			c.m.Lock()
+			t.canelFn = cancel
 			t.Client = client
 			c.m.Unlock()
+			c.logger.Printf("target '%s' gNMI client created", t.Config.Name)
 		}
 		return t.Set(ctx, req)
 	}
