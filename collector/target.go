@@ -38,8 +38,10 @@ type Target struct {
 
 	m                  *sync.Mutex
 	Client             gnmi.GNMIClient
+	canelFn            context.CancelFunc
 	SubscribeClients   map[string]gnmi.GNMI_SubscribeClient // subscription name to subscribeClient
-	PollChan           chan string                          // subscription name to be polled
+	SubCancelFns       map[string]context.CancelFunc
+	PollChan           chan string // subscription name to be polled
 	SubscribeResponses chan *SubscribeResponse
 	Errors             chan *TargetError
 }
@@ -78,6 +80,7 @@ func NewTarget(c *TargetConfig) *Target {
 		Outputs:            make([]outputs.Output, 0),
 		m:                  new(sync.Mutex),
 		SubscribeClients:   make(map[string]gnmi.GNMI_SubscribeClient),
+		SubCancelFns:       make(map[string]context.CancelFunc),
 		PollChan:           make(chan string),
 		SubscribeResponses: make(chan *SubscribeResponse, c.BufferSize),
 		Errors:             make(chan *TargetError),
@@ -151,6 +154,9 @@ func (t *Target) Subscribe(ctx context.Context, req *gnmi.SubscribeRequest, subs
 SUBSC:
 	nctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	t.m.Lock()
+	t.SubCancelFns[subscriptionName] = cancel
+	t.m.Unlock()
 	nctx = metadata.AppendToOutgoingContext(nctx, "username", *t.Config.Username, "password", *t.Config.Password)
 	subscribeClient, err := t.Client.Subscribe(nctx)
 	if err != nil {
@@ -158,9 +164,18 @@ SUBSC:
 			SubscriptionName: subscriptionName,
 			Err:              fmt.Errorf("failed to create a subscribe client, target='%s', retry in %d. err=%v", t.Config.Name, t.Config.RetryTimer, err),
 		}
-		cancel()
-		time.Sleep(t.Config.RetryTimer)
-		goto SUBSC
+		select {
+		case <-nctx.Done():
+			return
+		default:
+			t.Errors <- &TargetError{
+				SubscriptionName: subscriptionName,
+				Err:              fmt.Errorf("retrying in %s", t.Config.RetryTimer),
+			}
+			cancel()
+			time.Sleep(t.Config.RetryTimer)
+			goto SUBSC
+		}
 	}
 	t.m.Lock()
 	t.SubscribeClients[subscriptionName] = subscribeClient
@@ -169,11 +184,24 @@ SUBSC:
 	if err != nil {
 		t.Errors <- &TargetError{
 			SubscriptionName: subscriptionName,
-			Err:              fmt.Errorf("target '%s' send error, retry in %d. err=%v", t.Config.Name, t.Config.RetryTimer, err),
+			Err:              fmt.Errorf("target '%s' send error, retry in %s. err=%v", t.Config.Name, t.Config.RetryTimer, err),
 		}
-		cancel()
-		time.Sleep(t.Config.RetryTimer)
-		goto SUBSC
+		select {
+		case <-nctx.Done():
+			t.m.Lock()
+			delete(t.SubCancelFns, subscriptionName)
+			delete(t.SubscribeClients, subscriptionName)
+			t.m.Unlock()
+			return
+		default:
+			t.Errors <- &TargetError{
+				SubscriptionName: subscriptionName,
+				Err:              fmt.Errorf("retrying in %s", t.Config.RetryTimer),
+			}
+			cancel()
+			time.Sleep(t.Config.RetryTimer)
+			goto SUBSC
+		}
 	}
 	switch req.GetSubscribe().Mode {
 	case gnmi.SubscriptionList_STREAM:
@@ -184,13 +212,22 @@ SUBSC:
 					SubscriptionName: subscriptionName,
 					Err:              err,
 				}
-				t.Errors <- &TargetError{
-					SubscriptionName: subscriptionName,
-					Err:              fmt.Errorf("retrying in %d", t.Config.RetryTimer),
+				select {
+				case <-nctx.Done():
+					t.m.Lock()
+					delete(t.SubCancelFns, subscriptionName)
+					delete(t.SubscribeClients, subscriptionName)
+					t.m.Unlock()
+					return
+				default:
+					t.Errors <- &TargetError{
+						SubscriptionName: subscriptionName,
+						Err:              fmt.Errorf("retrying in %s", t.Config.RetryTimer),
+					}
+					cancel()
+					time.Sleep(t.Config.RetryTimer)
+					goto SUBSC
 				}
-				cancel()
-				time.Sleep(t.Config.RetryTimer)
-				goto SUBSC
 			}
 			t.SubscribeResponses <- &SubscribeResponse{
 				SubscriptionName: subscriptionName,
@@ -210,7 +247,7 @@ SUBSC:
 				}
 				t.Errors <- &TargetError{
 					SubscriptionName: subscriptionName,
-					Err:              fmt.Errorf("retrying in %d", t.Config.RetryTimer),
+					Err:              fmt.Errorf("retrying in %s", t.Config.RetryTimer),
 				}
 				cancel()
 				time.Sleep(t.Config.RetryTimer)
@@ -241,7 +278,7 @@ SUBSC:
 					}
 					continue
 				}
-				response, err := subscribeClient.Recv()
+				response, err := t.SubscribeClients[subName].Recv()
 				if err != nil {
 					t.Errors <- &TargetError{
 						SubscriptionName: subscriptionName,
@@ -307,4 +344,8 @@ func (t *Target) numberOfOnceSubscriptions() int {
 		}
 	}
 	return num
+}
+
+func (t *Target) Stop() {
+	t.canelFn()
 }
