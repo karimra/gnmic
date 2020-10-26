@@ -65,9 +65,22 @@ func WithSubscriptions(subs map[string]*SubscriptionConfig) CollectorOption {
 	}
 }
 
-func WithOutputs(outs map[string][]outputs.Output) CollectorOption {
+func WithOutputs(ctx context.Context, outs map[string][]map[string]interface{}, logger *log.Logger) CollectorOption {
 	return func(c *Collector) {
-		c.Outputs = outs
+		for grpName, grpConfig := range outs {
+			for _, o := range grpConfig {
+				if outType, ok := o["type"]; ok {
+					if initializer, ok := outputs.Outputs[outType.(string)]; ok {
+						out := initializer()
+						go out.Init(ctx, o, logger)
+						if _, ok := c.Outputs[grpName]; !ok {
+							c.Outputs[grpName] = make([]outputs.Output, 0)
+						}
+						c.Outputs[grpName] = append(c.Outputs[grpName], out)
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -89,6 +102,7 @@ func NewCollector(config *Config, targetConfigs map[string]*TargetConfig, opts .
 
 	c := &Collector{
 		Config:     config,
+		Outputs:    make(map[string][]outputs.Output),
 		m:          new(sync.Mutex),
 		Targets:    make(map[string]*Target),
 		httpServer: httpServer,
@@ -369,4 +383,13 @@ func (c *Collector) Set(ctx context.Context, targetName string, req *gnmi.SetReq
 		return t.Set(ctx, req)
 	}
 	return nil, fmt.Errorf("unknown target %s", targetName)
+}
+
+func (c *Collector) StartOutputs(ctx context.Context) {
+	for _, outputGroup := range c.Outputs {
+		for _, o := range outputGroup {
+			//go o.Init(ctx, )
+			_ = o
+		}
+	}
 }

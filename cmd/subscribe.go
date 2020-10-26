@@ -66,21 +66,22 @@ var subscribeCmd = &cobra.Command{
 		ctx, cancel := context.WithCancel(context.Background())
 		setupCloseHandler(cancel)
 		debug := viper.GetBool("debug")
+		targetsConfig, err := createTargets()
+		if err != nil {
+			return fmt.Errorf("failed getting targets config: %v", err)
+		}
+		if debug {
+			logger.Printf("targets: %s", targetsConfig)
+		}
+		subscriptionsConfig, err := getSubscriptions()
+		if err != nil {
+			return fmt.Errorf("failed getting subscriptions config: %v", err)
+		}
+		if debug {
+			logger.Printf("subscriptions: %s", subscriptionsConfig)
+		}
+		// shell cmd or first RPC is prompt mode
 		if coll == nil {
-			targetsConfig, err := createTargets()
-			if err != nil {
-				return fmt.Errorf("failed getting targets config: %v", err)
-			}
-			if debug {
-				logger.Printf("targets: %s", targetsConfig)
-			}
-			subscriptionsConfig, err := getSubscriptions()
-			if err != nil {
-				return fmt.Errorf("failed getting subscriptions config: %v", err)
-			}
-			if debug {
-				logger.Printf("subscriptions: %s", subscriptionsConfig)
-			}
 			outs, err := getOutputs(ctx)
 			if err != nil {
 				return err
@@ -98,26 +99,28 @@ var subscribeCmd = &cobra.Command{
 			coll = collector.NewCollector(cfg, targetsConfig,
 				collector.WithDialOptions(createCollectorDialOpts()),
 				collector.WithSubscriptions(subscriptionsConfig),
-				collector.WithOutputs(outs),
-				collector.WithLogger(logger))
-		}
-		for name := range coll.Targets {
-			go func(tn string) {
-				for {
-					err = coll.Subscribe(ctx, tn)
-					if err != nil {
-						if errors.Is(err, context.DeadlineExceeded) {
-							logger.Printf("failed to initialize target '%s' timeout (%s) reached", tn, coll.Targets[tn].Config.Timeout)
-						} else {
-							logger.Printf("failed to initialize target '%s': %v", tn, err)
-						}
-						logger.Printf("retrying target %s in %s", tn, coll.Targets[tn].Config.RetryTimer)
-						time.Sleep(coll.Targets[tn].Config.RetryTimer)
-						continue
-					}
-					return
+				collector.WithOutputs(ctx, outs, logger),
+				collector.WithLogger(logger),
+			)
+			for name := range coll.Targets {
+				go targetSubscribe(ctx, name)
+			}
+		} else { // not first RPC in prompt mode
+			for n, sub := range subscriptionsConfig {
+				if _, ok := coll.Subscriptions[n]; !ok {
+					coll.Subscriptions[n] = sub
 				}
-			}(name)
+			}
+			for _, tc := range targetsConfig {
+				tc.Outputs = viper.GetStringSlice("subscribe-output")
+				for name := range subscriptionsConfig {
+					tc.Subscriptions = append(tc.Subscriptions, name)
+				}
+				coll.InitTarget(tc)
+			}
+			for name := range targetsConfig {
+				go targetSubscribe(ctx, name)
+			}
 		}
 		polledTargetsSubscriptions := coll.PolledSubscriptionsTargets()
 		if len(polledTargetsSubscriptions) > 0 {
@@ -242,7 +245,7 @@ func initSubscribeFlags(cmd *cobra.Command) {
 	viper.BindPFlag("subscribe-output", cmd.LocalFlags().Lookup("output"))
 }
 
-func getOutputs(ctx context.Context) (map[string][]outputs.Output, error) {
+func getOutputs(ctx context.Context) (map[string][]map[string]interface{}, error) {
 	outDef := viper.GetStringMap("outputs")
 	if len(outDef) == 0 && !viper.GetBool("quiet") {
 		stdoutConfig := map[string]interface{}{
@@ -252,7 +255,7 @@ func getOutputs(ctx context.Context) (map[string][]outputs.Output, error) {
 		}
 		outDef["stdout"] = []interface{}{stdoutConfig}
 	}
-	outputDestinations := make(map[string][]outputs.Output)
+	outputsConfig := make(map[string][]map[string]interface{})
 	for name, d := range outDef {
 		dl := convert(d)
 		switch outs := dl.(type) {
@@ -261,17 +264,15 @@ func getOutputs(ctx context.Context) (map[string][]outputs.Output, error) {
 				switch ou := ou.(type) {
 				case map[string]interface{}:
 					if outType, ok := ou["type"]; ok {
-						if initializer, ok := outputs.Outputs[outType.(string)]; ok {
+						if _, ok := outputs.Outputs[outType.(string)]; ok {
 							format, ok := ou["format"]
 							if !ok || (ok && format == "") {
 								ou["format"] = viper.GetString("format")
 							}
-							o := initializer()
-							go o.Init(ctx, ou, logger)
-							if outputDestinations[name] == nil {
-								outputDestinations[name] = make([]outputs.Output, 0)
+							if outputsConfig[name] == nil {
+								outputsConfig[name] = make([]map[string]interface{}, 0)
 							}
-							outputDestinations[name] = append(outputDestinations[name], o)
+							outputsConfig[name] = append(outputsConfig[name], ou)
 							continue
 						}
 						logger.Printf("unknown output type '%s'", outType)
@@ -288,12 +289,12 @@ func getOutputs(ctx context.Context) (map[string][]outputs.Output, error) {
 	}
 	namedOutputs := viper.GetStringSlice("subscribe-output")
 	if len(namedOutputs) == 0 {
-		return outputDestinations, nil
+		return outputsConfig, nil
 	}
-	filteredOutputs := make(map[string][]outputs.Output)
+	filteredOutputs := make(map[string][]map[string]interface{})
 	notFound := make([]string, 0)
 	for _, name := range namedOutputs {
-		if o, ok := outputDestinations[name]; ok {
+		if o, ok := outputsConfig[name]; ok {
 			filteredOutputs[name] = o
 		} else {
 			notFound = append(notFound, name)
@@ -458,4 +459,22 @@ func getOutputsFromCfg() []outputSuggestion {
 		return suggestions[i].name < suggestions[j].name
 	})
 	return suggestions
+}
+
+func targetSubscribe(ctx context.Context, name string) {
+	var err error
+	for {
+		err = coll.Subscribe(ctx, name)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				logger.Printf("failed to initialize target '%s' timeout (%s) reached", name, coll.Targets[name].Config.Timeout)
+			} else {
+				logger.Printf("failed to initialize target '%s': %v", name, err)
+			}
+			logger.Printf("retrying target %s in %s", name, coll.Targets[name].Config.RetryTimer)
+			time.Sleep(coll.Targets[name].Config.RetryTimer)
+			continue
+		}
+		return
+	}
 }
