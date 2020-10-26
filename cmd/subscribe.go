@@ -21,7 +21,6 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/karimra/gnmic/collector"
@@ -63,31 +62,32 @@ var subscribeCmd = &cobra.Command{
 	},
 
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
 		ctx, cancel := context.WithCancel(context.Background())
 		setupCloseHandler(cancel)
 		debug := viper.GetBool("debug")
-		targetsConfig, err := createTargets()
-		if err != nil {
-			return fmt.Errorf("failed getting targets config: %v", err)
-		}
-		if debug {
-			logger.Printf("targets: %s", targetsConfig)
-		}
-		subscriptionsConfig, err := getSubscriptions()
-		if err != nil {
-			return fmt.Errorf("failed getting subscriptions config: %v", err)
-		}
-		if debug {
-			logger.Printf("subscriptions: %s", subscriptionsConfig)
-		}
-		outs, err := getOutputs(ctx)
-		if err != nil {
-			return err
-		}
-		if debug {
-			logger.Printf("outputs: %+v", outs)
-		}
 		if coll == nil {
+			targetsConfig, err := createTargets()
+			if err != nil {
+				return fmt.Errorf("failed getting targets config: %v", err)
+			}
+			if debug {
+				logger.Printf("targets: %s", targetsConfig)
+			}
+			subscriptionsConfig, err := getSubscriptions()
+			if err != nil {
+				return fmt.Errorf("failed getting subscriptions config: %v", err)
+			}
+			if debug {
+				logger.Printf("subscriptions: %s", subscriptionsConfig)
+			}
+			outs, err := getOutputs(ctx)
+			if err != nil {
+				return err
+			}
+			if debug {
+				logger.Printf("outputs: %+v", outs)
+			}
 			cfg := &collector.Config{
 				PrometheusAddress:   viper.GetString("prometheus-address"),
 				Debug:               viper.GetBool("debug"),
@@ -95,36 +95,30 @@ var subscribeCmd = &cobra.Command{
 				TargetReceiveBuffer: viper.GetUint("target-buffer-size"),
 				RetryTimer:          viper.GetDuration("retry-timer"),
 			}
-
 			coll = collector.NewCollector(cfg, targetsConfig,
 				collector.WithDialOptions(createCollectorDialOpts()),
 				collector.WithSubscriptions(subscriptionsConfig),
 				collector.WithOutputs(outs),
 				collector.WithLogger(logger))
 		}
-		wg := new(sync.WaitGroup)
-		wg.Add(len(coll.Targets))
 		for name := range coll.Targets {
 			go func(tn string) {
-				defer wg.Done()
-				tRetryTimer := coll.Targets[tn].Config.RetryTimer
 				for {
 					err = coll.Subscribe(ctx, tn)
 					if err != nil {
 						if errors.Is(err, context.DeadlineExceeded) {
-							logger.Printf("failed to initialize target '%s' timeout (%s) reached", tn, targetsConfig[tn].Timeout)
+							logger.Printf("failed to initialize target '%s' timeout (%s) reached", tn, coll.Targets[tn].Config.Timeout)
 						} else {
 							logger.Printf("failed to initialize target '%s': %v", tn, err)
 						}
-						logger.Printf("retrying target %s in %s", tn, tRetryTimer)
-						time.Sleep(tRetryTimer)
+						logger.Printf("retrying target %s in %s", tn, coll.Targets[tn].Config.RetryTimer)
+						time.Sleep(coll.Targets[tn].Config.RetryTimer)
 						continue
 					}
 					return
 				}
 			}(name)
 		}
-		wg.Wait()
 		polledTargetsSubscriptions := coll.PolledSubscriptionsTargets()
 		if len(polledTargetsSubscriptions) > 0 {
 			pollTargets := make([]string, 0, len(polledTargetsSubscriptions))
