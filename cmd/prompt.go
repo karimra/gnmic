@@ -682,6 +682,18 @@ func ExecutePrompt() {
 						buf.DeleteBeforeCursor(len([]rune(buf.Document().GetWordBeforeCursorUntilSeparator("/"))))
 					},
 				},
+				goprompt.KeyBind{
+					Key: goprompt.ControlQ,
+					Fn: func(buf *goprompt.Buffer) {
+						fmt.Println("\nterminating all gnmi clients...")
+						for _, target := range coll.Targets {
+							for _, cfn := range target.SubCancelFns {
+								cfn()
+							}
+							target.Stop()
+						}
+					},
+				},
 			),
 			goprompt.OptionCompletionWordSeparator(completer.FilePathCompletionSeparator),
 			// goprompt.OptionCompletionOnDown(),
