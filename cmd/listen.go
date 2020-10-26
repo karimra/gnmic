@@ -52,10 +52,24 @@ var listenCmd = &cobra.Command{
 		if len(address) > 1 {
 			fmt.Printf("multiple addresses specified, listening only on %s\n", address[0])
 		}
-		var err error
-		server.Outputs, err = getOutputs(ctx)
+
+		outputsConfig, err := getOutputs(ctx)
 		if err != nil {
 			return err
+		}
+		for grpName, grpConfig := range outputsConfig {
+			for _, o := range grpConfig {
+				if outType, ok := o["type"]; ok {
+					if initializer, ok := outputs.Outputs[outType.(string)]; ok {
+						out := initializer()
+						go out.Init(ctx, o, logger)
+						if _, ok := server.Outputs[grpName]; !ok {
+							server.Outputs[grpName] = make([]outputs.Output, 0)
+						}
+						server.Outputs[grpName] = append(server.Outputs[grpName], out)
+					}
+				}
+			}
 		}
 
 		defer func() {
