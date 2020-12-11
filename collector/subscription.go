@@ -99,7 +99,9 @@ func (sc *SubscriptionConfig) CreateSubscribeRequest() (*gnmi.SubscribeRequest, 
 			subscriptions[i].Mode = gnmi.SubscriptionMode(mode)
 			switch gnmi.SubscriptionMode(mode) {
 			case gnmi.SubscriptionMode_ON_CHANGE:
-				subscriptions[i].HeartbeatInterval = uint64(sc.HeartbeatInterval.Nanoseconds())
+				if sc.HeartbeatInterval != nil {
+					subscriptions[i].HeartbeatInterval = uint64(sc.HeartbeatInterval.Nanoseconds())
+				}
 			case gnmi.SubscriptionMode_SAMPLE, gnmi.SubscriptionMode_TARGET_DEFINED:
 				subscriptions[i].SampleInterval = uint64(sc.SampleInterval.Nanoseconds())
 				subscriptions[i].SuppressRedundant = sc.SuppressRedundant

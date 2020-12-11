@@ -18,29 +18,22 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
-	"net"
 	"os"
 	"os/signal"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/karimra/gnmic/collector"
+	"github.com/karimra/gnmic/config"
 	"github.com/karimra/gnmic/formatters"
-	homedir "github.com/mitchellh/go-homedir"
-	"github.com/mitchellh/mapstructure"
 	"github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
-	"golang.org/x/crypto/ssh/terminal"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/proto"
@@ -48,9 +41,7 @@ import (
 
 const (
 	defaultGrpcPort = "57400"
-)
-const (
-	msgSize = 512 * 1024 * 1024
+	msgSize         = 512 * 1024 * 1024
 )
 
 var encodingNames = []string{
@@ -84,82 +75,85 @@ var formats = [][2]string{
 var tlsVersions = []string{"1.3", "1.2", "1.1", "1.0", "1"}
 
 var cfgFile string
-var f io.WriteCloser
-var logger *log.Logger
-var coll *collector.Collector
+
+type CLI struct {
+	config    *config.Config
+	logger    *log.Logger
+	collector *collector.Collector
+}
+
+var cli = &CLI{config: config.New()}
 
 func rootCmdPersistentPreRunE(cmd *cobra.Command, args []string) error {
-	debug := viper.GetBool("debug")
-	if viper.GetString("log-file") != "" {
-		var err error
-		f, err = os.OpenFile(viper.GetString("log-file"), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		if err != nil {
-			return fmt.Errorf("error opening log file: %v", err)
-		}
-	} else {
-		if debug {
-			viper.Set("log", true)
-		}
-		switch viper.GetBool("log") {
-		case true:
-			f = os.Stderr
-		case false:
-			f = myWriteCloser{ioutil.Discard}
-		}
+	err := cli.config.Load(cfgFile)
+	if err != nil {
+		return err
 	}
+	//postInitCommands(cmd.Commands())
+
+	debug := cli.config.Debug
 	loggingFlags := log.LstdFlags | log.Lmicroseconds
 	if debug {
 		loggingFlags |= log.Llongfile
 	}
-	logger = log.New(f, "gnmic ", loggingFlags)
+	cli.logger = log.New(os.Stderr, "gnmic ", loggingFlags)
+
+	logFile := cli.config.LogFile
+	if logFile != "" {
+		f, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			return fmt.Errorf("error opening log file: %v", err)
+		}
+		cli.logger.SetOutput(f)
+	} else {
+		if debug {
+			cli.config.Log = true
+		}
+		if cli.config.Log {
+			cli.logger.SetOutput(os.Stderr)
+		} else {
+			cli.logger.SetOutput(ioutil.Discard)
+		}
+	}
 	if debug {
-		grpclog.SetLogger(logger) //lint:ignore SA1019 see https://github.com/karimra/gnmic/issues/59
+		grpclog.SetLogger(cli.logger) //lint:ignore SA1019 see https://github.com/karimra/gnmic/issues/59
 		log.Printf("version=%s, commit=%s, date=%s, gitURL=%s, docs=https://gnmic.kmrd.dev", version, commit, date, gitURL)
 	}
-	cfgFile := viper.ConfigFileUsed()
+	cfgFile := cli.config.ConfigFileUsed()
 	if len(cfgFile) != 0 {
-		logger.Printf("using config file %s", cfgFile)
+		cli.logger.Printf("using config file %s", cfgFile)
 		b, err := ioutil.ReadFile(cfgFile)
 		if err != nil {
 			if cmd.Flag("config").Changed {
 				return err
 			}
-			logger.Printf("failed reading config file: %v", err)
+			cli.logger.Printf("failed reading config file: %v", err)
 		}
 		if debug {
-			logger.Printf("config file:\n%s", string(b))
+			cli.logger.Printf("config file:\n%s", string(b))
 		}
 	}
-	logConfigKeysValues()
+	//logConfigKeysValues()
 	return nil
 }
 
-func rootCmdPersistentPostRun(cmd *cobra.Command, args []string) {
-	if !viper.GetBool("log") || viper.GetString("log-file") != "" {
-		f.Close()
-	}
-}
+// func logConfigKeysValues() {
+// 	if cli.config.Debug {
+// 		b, err := json.MarshalIndent(cli.config.AllSettings(), "", "  ")
+// 		if err != nil {
+// 			cli.logger.Printf("could not marshal config settings: %v", err)
+// 		} else {
+// 			cli.logger.Printf("set flags/config:\n%s\n", string(b))
+// 		}
+// 		keys := cli.config.AllKeys()
+// 		sort.Strings(keys)
 
-func logConfigKeysValues() {
-	if viper.GetBool("debug") {
-		b, err := json.MarshalIndent(viper.AllSettings(), "", "  ")
-		if err != nil {
-			logger.Printf("could not marshal viper settings: %v", err)
-		} else {
-			logger.Printf("set flags/config:\n%s\n", string(b))
-		}
-		keys := viper.AllKeys()
-		sort.Strings(keys)
-
-		for _, k := range keys {
-			if !viper.IsSet(k) {
-				continue
-			}
-			v := viper.Get(k)
-			logger.Printf("%s='%v'(%T)", k, v, v)
-		}
-	}
-}
+// 		for _, k := range keys {
+// 			v := cli.config.Get(k)
+// 			cli.logger.Printf("%s='%v'(%T)", k, v, v)
+// 		}
+// 	}
+// }
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -172,7 +166,6 @@ var rootCmd = &cobra.Command{
 		"--address":  "TARGET",
 	},
 	PersistentPreRunE: rootCmdPersistentPreRunE,
-	PersistentPostRun: rootCmdPersistentPostRun,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -188,7 +181,7 @@ func Execute() {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+	//cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/gnmic.yaml)")
 	rootCmd.PersistentFlags().StringSliceP("address", "a", []string{}, "comma separated gnmi targets addresses")
 	rootCmd.PersistentFlags().StringP("username", "u", "", "username")
@@ -215,116 +208,59 @@ func init() {
 	rootCmd.PersistentFlags().StringP("tls-max-version", "", "", fmt.Sprintf("maximum TLS supported version, one of %q", tlsVersions))
 	rootCmd.PersistentFlags().StringP("tls-version", "", "", fmt.Sprintf("set TLS version. Overwrites --tls-min-version and --tls-max-version, one of %q", tlsVersions))
 	//
-	viper.BindPFlag("address", rootCmd.PersistentFlags().Lookup("address"))
-	viper.BindPFlag("username", rootCmd.PersistentFlags().Lookup("username"))
-	viper.BindPFlag("password", rootCmd.PersistentFlags().Lookup("password"))
-	viper.BindPFlag("port", rootCmd.PersistentFlags().Lookup("port"))
-	viper.BindPFlag("encoding", rootCmd.PersistentFlags().Lookup("encoding"))
-	viper.BindPFlag("insecure", rootCmd.PersistentFlags().Lookup("insecure"))
-	viper.BindPFlag("tls-ca", rootCmd.PersistentFlags().Lookup("tls-ca"))
-	viper.BindPFlag("tls-cert", rootCmd.PersistentFlags().Lookup("tls-cert"))
-	viper.BindPFlag("tls-key", rootCmd.PersistentFlags().Lookup("tls-key"))
-	viper.BindPFlag("timeout", rootCmd.PersistentFlags().Lookup("timeout"))
-	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
-	viper.BindPFlag("skip-verify", rootCmd.PersistentFlags().Lookup("skip-verify"))
-	viper.BindPFlag("no-prefix", rootCmd.PersistentFlags().Lookup("no-prefix"))
-	viper.BindPFlag("proxy-from-env", rootCmd.PersistentFlags().Lookup("proxy-from-env"))
-	viper.BindPFlag("format", rootCmd.PersistentFlags().Lookup("format"))
-	viper.BindPFlag("log-file", rootCmd.PersistentFlags().Lookup("log-file"))
-	viper.BindPFlag("log", rootCmd.PersistentFlags().Lookup("log"))
-	viper.BindPFlag("max-msg-size", rootCmd.PersistentFlags().Lookup("max-msg-size"))
-	viper.BindPFlag("prometheus-address", rootCmd.PersistentFlags().Lookup("prometheus-address"))
-	viper.BindPFlag("print-request", rootCmd.PersistentFlags().Lookup("print-request"))
-	viper.BindPFlag("retry", rootCmd.PersistentFlags().Lookup("retry"))
-	viper.BindPFlag("tls-min-version", rootCmd.PersistentFlags().Lookup("tls-min-version"))
-	viper.BindPFlag("tls-max-version", rootCmd.PersistentFlags().Lookup("tls-max-version"))
-	viper.BindPFlag("tls-version", rootCmd.PersistentFlags().Lookup("tls-version"))
-}
-
-// initConfig reads in config file and ENV variables if set.
-func initConfig() {
-	if cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(cfgFile)
-	} else {
-		// Find home directory.
-		home, err := homedir.Dir()
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		// Search config in home directory with name ".gnmic" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigName("gnmic")
-	}
-
-	//viper.AutomaticEnv() // read in environment variables that match
-
-	// If a config file is found, read it in.
-	viper.ReadInConfig()
-	postInitCommands(rootCmd.Commands())
-}
-
-func postInitCommands(commands []*cobra.Command) {
-	for _, cmd := range commands {
-		presetRequiredFlags(cmd)
-		if cmd.HasSubCommands() {
-			postInitCommands(cmd.Commands())
-		}
-	}
-}
-
-func presetRequiredFlags(cmd *cobra.Command) {
-	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
-		flagName := fmt.Sprintf("%s-%s", cmd.Name(), f.Name)
-		value := viper.Get(flagName)
-		if value != nil && viper.IsSet(flagName) && !f.Changed {
-			var err error
-			switch value := value.(type) {
-			case string:
-				err = cmd.LocalFlags().Set(f.Name, value)
-			case []interface{}:
-				ls := make([]string, len(value))
-				for i := range value {
-					ls[i] = value[i].(string)
-				}
-				err = cmd.LocalFlags().Set(f.Name, strings.Join(ls, ","))
-			case []string:
-				err = cmd.LocalFlags().Set(f.Name, strings.Join(value, ","))
-			default:
-				fmt.Printf("unexpected config value type, value=%v, type=%T\n", value, value)
-			}
-			if err != nil {
-				fmt.Printf("failed setting flag '%s' from viper: %v\n", flagName, err)
-			}
-		}
+	rootCmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		cli.config.BindPFlag(flag.Name, flag)
 	})
+
+	rootCmd.AddCommand(newCapabilitiesCommand())
+	rootCmd.AddCommand(newGetCommand())
+	rootCmd.AddCommand(newListenCommand())
+	rootCmd.AddCommand(newPathCommand())
+	rootCmd.AddCommand(newSetCommand())
+	rootCmd.AddCommand(newSubscribeCommand())
+	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newPromptCommand())
 }
 
-func readUsername() (string, error) {
-	var username string
-	fmt.Print("username: ")
-	_, err := fmt.Scan(&username)
-	if err != nil {
-		return "", err
-	}
-	return username, nil
-}
-func readPassword() (string, error) {
-	fmt.Print("password: ")
-	pass, err := terminal.ReadPassword(int(os.Stdin.Fd()))
-	if err != nil {
-		return "", err
-	}
-	fmt.Println()
-	return string(pass), nil
-}
+// func postInitCommands(commands []*cobra.Command) {
+// 	for _, cmd := range commands {
+// 		presetRequiredFlags(cmd)
+// 		if cmd.HasSubCommands() {
+// 			postInitCommands(cmd.Commands())
+// 		}
+// 	}
+// }
+
+// func presetRequiredFlags(cmd *cobra.Command) {
+// 	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
+// 		flagName := fmt.Sprintf("%s-%s", cmd.Name(), f.Name)
+// 		value := cli.config.Get(flagName)
+// 		if value != nil && cli.config.IsSet(flagName) && !f.Changed {
+// 			var err error
+// 			switch value := value.(type) {
+// 			case string:
+// 				err = cmd.LocalFlags().Set(f.Name, value)
+// 			case []interface{}:
+// 				ls := make([]string, len(value))
+// 				for i := range value {
+// 					ls[i] = value[i].(string)
+// 				}
+// 				err = cmd.LocalFlags().Set(f.Name, strings.Join(ls, ","))
+// 			case []string:
+// 				err = cmd.LocalFlags().Set(f.Name, strings.Join(value, ","))
+// 			default:
+// 				fmt.Printf("unexpected config value type, value=%v, type=%T\n", value, value)
+// 			}
+// 			if err != nil {
+// 				fmt.Printf("failed setting flag '%s' from config: %v\n", flagName, err)
+// 			}
+// 		}
+// 	})
+// }
+
 func loadCerts(tlscfg *tls.Config) error {
-	tlsCert := viper.GetString("tls-cert")
-	tlsKey := viper.GetString("tls-key")
-	if tlsCert != "" && tlsKey != "" {
-		certificate, err := tls.LoadX509KeyPair(tlsCert, tlsKey)
+	if cli.config.TLSCert != "" && cli.config.TLSKey != "" {
+		certificate, err := tls.LoadX509KeyPair(cli.config.TLSCert, cli.config.TLSKey)
 		if err != nil {
 			return err
 		}
@@ -333,11 +269,11 @@ func loadCerts(tlscfg *tls.Config) error {
 	}
 	return nil
 }
+
 func loadCACerts(tlscfg *tls.Config) error {
-	tlsCa := viper.GetString("tls-ca")
 	certPool := x509.NewCertPool()
-	if tlsCa != "" {
-		caFile, err := ioutil.ReadFile(tlsCa)
+	if cli.config.TLSCa != "" {
+		caFile, err := ioutil.ReadFile(cli.config.TLSCa)
 		if err != nil {
 			return err
 		}
@@ -348,6 +284,7 @@ func loadCACerts(tlscfg *tls.Config) error {
 	}
 	return nil
 }
+
 func printer(ctx context.Context, c chan string) {
 	for {
 		select {
@@ -367,14 +304,6 @@ func gather(ctx context.Context, c chan string, ls *[]string) {
 			return
 		}
 	}
-}
-
-type myWriteCloser struct {
-	io.Writer
-}
-
-func (myWriteCloser) Close() error {
-	return nil
 }
 
 func indent(prefix, s string) string {
@@ -409,6 +338,7 @@ func filterModels(ctx context.Context, coll *collector.Collector, tName string, 
 	}
 	return supportedModels, unsupportedModels, nil
 }
+
 func setupCloseHandler(cancelFn context.CancelFunc) {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
@@ -421,188 +351,20 @@ func setupCloseHandler(cancelFn context.CancelFunc) {
 }
 
 func numTargets() int {
-	addressesLength := len(viper.GetStringSlice("address"))
+	addressesLength := len(cli.config.Address)
 	if addressesLength > 0 {
 		return addressesLength
 	}
-	targets := viper.Get("targets")
-	switch targets := targets.(type) {
-	case string:
-		return len(strings.Split(targets, " "))
-	case map[string]interface{}:
-		return len(targets)
-	}
-	return 0
-}
-
-func createTargets() (map[string]*collector.TargetConfig, error) {
-	addresses := viper.GetStringSlice("address")
-	targets := make(map[string]*collector.TargetConfig)
-	defGrpcPort := viper.GetString("port")
-	// case address is defined in config file
-	if len(addresses) > 0 {
-		if viper.GetString("username") == "" {
-			defUsername, err := readUsername()
-			if err != nil {
-				return nil, err
-			}
-			viper.Set("username", defUsername)
-		}
-		if viper.GetString("password") == "" {
-			defPassword, err := readPassword()
-			if err != nil {
-				return nil, err
-			}
-			viper.Set("password", defPassword)
-		}
-		for _, addr := range addresses {
-			tc := new(collector.TargetConfig)
-			if !strings.HasPrefix(addr, "unix://") {
-				_, _, err := net.SplitHostPort(addr)
-				if err != nil {
-					if strings.Contains(err.Error(), "missing port in address") ||
-						strings.Contains(err.Error(), "too many colons in address") {
-						addr = net.JoinHostPort(addr, defGrpcPort)
-					} else {
-						logger.Printf("error parsing address '%s': %v", addr, err)
-						return nil, fmt.Errorf("error parsing address '%s': %v", addr, err)
-					}
-				}
-			}
-			tc.Address = addr
-			setTargetConfigDefaults(tc)
-			targets[tc.Name] = tc
-		}
-		return targets, nil
-	}
-	// case targets is defined in config file
-	targetsInt := viper.Get("targets")
-	targetsMap := make(map[string]interface{})
-	switch targetsInt := targetsInt.(type) {
-	case string:
-		for _, addr := range strings.Split(targetsInt, " ") {
-			targetsMap[addr] = nil
-		}
-	case map[string]interface{}:
-		targetsMap = targetsInt
-	case nil:
-		return nil, nil
-	default:
-		return nil, fmt.Errorf("unexpected targets format, got: %T", targetsInt)
-	}
-	if len(targetsMap) == 0 {
-		return nil, fmt.Errorf("no targets found")
-	}
-	for addr, t := range targetsMap {
-		if !strings.HasPrefix(addr, "unix://") {
-			_, _, err := net.SplitHostPort(addr)
-			if err != nil {
-				if strings.Contains(err.Error(), "missing port in address") ||
-					strings.Contains(err.Error(), "too many colons in address") {
-					addr = net.JoinHostPort(addr, defGrpcPort)
-				} else {
-					logger.Printf("error parsing address '%s': %v", addr, err)
-					return nil, fmt.Errorf("error parsing address '%s': %v", addr, err)
-				}
-			}
-		}
-		tc := new(collector.TargetConfig)
-		switch t := t.(type) {
-		case map[string]interface{}:
-			decoder, err := mapstructure.NewDecoder(
-				&mapstructure.DecoderConfig{
-					DecodeHook: mapstructure.StringToTimeDurationHookFunc(),
-					Result:     tc,
-				},
-			)
-			if err != nil {
-				return nil, err
-			}
-			err = decoder.Decode(t)
-			if err != nil {
-				return nil, err
-			}
-		case nil:
-		default:
-			return nil, fmt.Errorf("unexpected targets format, got a %T", t)
-		}
-		tc.Address = addr
-		setTargetConfigDefaults(tc)
-		if viper.GetBool("debug") {
-			logger.Printf("read target config: %s", tc)
-		}
-		targets[tc.Name] = tc
-	}
-	subNames := viper.GetStringSlice("subscribe-name")
-	if len(subNames) == 0 {
-		return targets, nil
-	}
-	for n := range targets {
-		targets[n].Subscriptions = subNames
-	}
-	return targets, nil
-}
-
-func setTargetConfigDefaults(tc *collector.TargetConfig) {
-	if tc.Name == "" {
-		tc.Name = tc.Address
-	}
-	if tc.Username == nil {
-		s := viper.GetString("username")
-		tc.Username = &s
-	}
-	if tc.Password == nil {
-		s := viper.GetString("password")
-		tc.Password = &s
-	}
-	if tc.Timeout == 0 {
-		tc.Timeout = viper.GetDuration("timeout")
-	}
-	if tc.Insecure == nil {
-		b := viper.GetBool("insecure")
-		tc.Insecure = &b
-	}
-	if tc.SkipVerify == nil {
-		b := viper.GetBool("skip-verify")
-		tc.SkipVerify = &b
-	}
-	if tc.Insecure != nil && !*tc.Insecure {
-		if tc.TLSCA == nil {
-			s := viper.GetString("tls-ca")
-			if s != "" {
-				tc.TLSCA = &s
-			}
-		}
-		if tc.TLSCert == nil {
-			s := viper.GetString("tls-cert")
-			tc.TLSCert = &s
-		}
-		if tc.TLSKey == nil {
-			s := viper.GetString("tls-key")
-			tc.TLSKey = &s
-		}
-	}
-	if tc.RetryTimer == 0 {
-		tc.RetryTimer = viper.GetDuration("retry")
-	}
-	if tc.TLSVersion == "" {
-		tc.TLSVersion = viper.GetString("tls-version")
-	}
-	if tc.TLSMinVersion == "" {
-		tc.TLSMinVersion = viper.GetString("tls-min-version")
-	}
-	if tc.TLSMaxVersion == "" {
-		tc.TLSMaxVersion = viper.GetString("tls-max-version")
-	}
+	return len(cli.config.Targets)
 }
 
 func createCollectorDialOpts() []grpc.DialOption {
 	opts := []grpc.DialOption{}
 	opts = append(opts, grpc.WithBlock())
-	if viper.GetInt("max-msg-size") > 0 {
-		opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(viper.GetInt("max-msg-size"))))
+	if cli.config.MaxMsgSize > 0 {
+		opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(cli.config.MaxMsgSize)))
 	}
-	if !viper.GetBool("proxy-from-env") {
+	if !cli.config.ProxyFromEnv {
 		opts = append(opts, grpc.WithNoProxy())
 	}
 	return opts
@@ -610,13 +372,13 @@ func createCollectorDialOpts() []grpc.DialOption {
 
 func printMsg(address string, msg proto.Message) error {
 	printPrefix := ""
-	if numTargets() > 1 && !viper.GetBool("no-prefix") {
+	if numTargets() > 1 && !cli.config.NoPrefix {
 		printPrefix = fmt.Sprintf("[%s] ", address)
 	}
 
 	switch msg := msg.ProtoReflect().Interface().(type) {
 	case *gnmi.CapabilityResponse:
-		if len(viper.GetString("format")) == 0 {
+		if len(cli.config.Format) == 0 {
 			printCapResponse(printPrefix, msg)
 			return nil
 		}
@@ -624,7 +386,7 @@ func printMsg(address string, msg proto.Message) error {
 	mo := formatters.MarshalOptions{
 		Multiline: true,
 		Indent:    "  ",
-		Format:    viper.GetString("format"),
+		Format:    cli.config.Format,
 	}
 	b, err := mo.Marshal(msg, map[string]string{"address": address})
 	if err != nil {
@@ -642,7 +404,7 @@ func printCapResponse(printPrefix string, msg *gnmi.CapabilityResponse) {
 	sb.WriteString("gNMI version: ")
 	sb.WriteString(msg.GNMIVersion)
 	sb.WriteString("\n")
-	if viper.GetBool("version") {
+	if cli.config.CapabilitiesVersion {
 		return
 	}
 	sb.WriteString(printPrefix)
@@ -666,87 +428,4 @@ func printCapResponse(printPrefix string, msg *gnmi.CapabilityResponse) {
 		sb.WriteString("\n")
 	}
 	fmt.Printf("%s\n", indent(printPrefix, sb.String()))
-}
-
-func readTargetsFromCfg() []*collector.TargetConfig {
-	addresses := viper.GetStringSlice("address")
-	targets := make([]*collector.TargetConfig, 0)
-	defGrpcPort := viper.GetString("port")
-	if len(addresses) > 0 {
-		for _, addr := range addresses {
-			tc := new(collector.TargetConfig)
-			if !strings.HasPrefix(addr, "unix://") {
-				_, _, err := net.SplitHostPort(addr)
-				if err != nil {
-					if strings.Contains(err.Error(), "missing port in address") {
-						addr = net.JoinHostPort(addr, defGrpcPort)
-					} else {
-						return nil
-					}
-				}
-			}
-			tc.Address = addr
-			setTargetConfigDefaults(tc)
-			targets = append(targets, tc)
-		}
-		return targets
-	}
-	// case targets is defined in config file
-	targetsInt := viper.Get("targets")
-	targetsMap := make(map[string]interface{})
-	switch targetsInt := targetsInt.(type) {
-	case string:
-		for _, addr := range strings.Split(targetsInt, " ") {
-			targetsMap[addr] = nil
-		}
-	case map[string]interface{}:
-		targetsMap = targetsInt
-	default:
-		return nil
-	}
-	if len(targetsMap) == 0 {
-		return nil
-	}
-	for addr, t := range targetsMap {
-		if !strings.HasPrefix(addr, "unix://") {
-			_, _, err := net.SplitHostPort(addr)
-			if err != nil {
-				if strings.Contains(err.Error(), "missing port in address") {
-					addr = net.JoinHostPort(addr, defGrpcPort)
-				} else {
-					return nil
-				}
-			}
-		}
-		tc := new(collector.TargetConfig)
-		switch t := t.(type) {
-		case map[string]interface{}:
-			decoder, err := mapstructure.NewDecoder(
-				&mapstructure.DecoderConfig{
-					DecodeHook: mapstructure.StringToTimeDurationHookFunc(),
-					Result:     tc,
-				},
-			)
-			if err != nil {
-				return nil
-			}
-			err = decoder.Decode(t)
-			if err != nil {
-				return nil
-			}
-		case nil:
-		default:
-			return nil
-		}
-		tc.Address = addr
-		setTargetConfigDefaults(tc)
-		if viper.GetBool("debug") {
-			logger.Printf("read target config: %s", tc)
-		}
-		targets = append(targets, tc)
-	}
-	sort.Slice(targets, func(i, j int) bool {
-		return targets[i].Name < targets[j].Name
-	})
-	return targets
 }

@@ -26,7 +26,7 @@ import (
 	"github.com/manifoldco/promptui"
 	"github.com/openconfig/goyang/pkg/yang"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	"github.com/spf13/pflag"
 )
 
 var files []string
@@ -152,65 +152,26 @@ func generateYangSchema(d, f, e []string) error {
 	return nil
 }
 
-// pathCmd represents the path command
-var pathCmd = &cobra.Command{
-	Use:   "path",
-	Short: "generate gnmi or xpath style from yang file",
-	Annotations: map[string]string{
-		"--file": "YANG",
-		"--dir":  "DIR",
-	},
-	PreRunE: func(cmd *cobra.Command, args []string) error {
-		if pathType != "xpath" && pathType != "gnmi" {
-			return fmt.Errorf("path-type must be one of 'xpath' or 'gnmi'")
-		}
-		var err error
-		dirs, err = resolveGlobs(dirs)
-		if err != nil {
-			return err
-		}
-		files, err = resolveGlobs(files)
-		if err != nil {
-			return err
-		}
-		for _, dirpath := range dirs {
-			expanded, err := yang.PathsWithModules(dirpath)
-			if err != nil {
-				return err
-			}
-			if viper.GetBool("debug") {
-				for _, fdir := range expanded {
-					logger.Printf("adding %s to YANG paths", fdir)
-				}
-			}
-			yang.AddPath(expanded...)
-		}
-		yfiles, err := findYangFiles(files)
-		if err != nil {
-			return err
-		}
-		files = make([]string, 0, len(yfiles))
-		files = append(files, yfiles...)
-		if viper.GetBool("debug") {
-			for _, file := range files {
-				logger.Printf("loading %s file", file)
-			}
-		}
-		return nil
-	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return pathCmdRun(dirs, files, excluded)
-	},
-	PostRun: func(cmd *cobra.Command, args []string) {
-		cmd.ResetFlags()
-		initPathFlags(cmd)
-	},
-	SilenceUsage: true,
-}
-
-func init() {
-	rootCmd.AddCommand(pathCmd)
-	initPathFlags(pathCmd)
+func newPathCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "path",
+		Short: "generate gnmi or xpath style from yang file",
+		Annotations: map[string]string{
+			"--file": "YANG",
+			"--dir":  "DIR",
+		},
+		PreRunE: preRunPathCommand,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return pathCmdRun(dirs, files, excluded)
+		},
+		PostRun: func(cmd *cobra.Command, args []string) {
+			cmd.ResetFlags()
+			initPathFlags(cmd)
+		},
+		SilenceUsage: true,
+	}
+	initPathFlags(cmd)
+	return cmd
 }
 
 // used to init or reset pathCmd flags for gnmic-prompt mode
@@ -224,13 +185,48 @@ func initPathFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&withPrefix, "with-prefix", "", false, "include module/submodule prefix in path elements")
 	cmd.Flags().BoolVarP(&printTypes, "types", "", false, "print leaf type")
 	cmd.Flags().BoolVarP(&search, "search", "", false, "search through path list")
-	viper.BindPFlag("path-file", cmd.LocalFlags().Lookup("file"))
-	viper.BindPFlag("path-exclude", cmd.LocalFlags().Lookup("exclude"))
-	viper.BindPFlag("path-dir", cmd.LocalFlags().Lookup("dir"))
-	viper.BindPFlag("path-path-type", cmd.LocalFlags().Lookup("path-type"))
-	viper.BindPFlag("path-module", cmd.LocalFlags().Lookup("module"))
-	viper.BindPFlag("path-types", cmd.LocalFlags().Lookup("types"))
-	viper.BindPFlag("path-search", cmd.LocalFlags().Lookup("search"))
+	cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+		cli.config.BindPFlag(cmd.Name()+"-"+flag.Name, flag)
+	})
+}
+
+func preRunPathCommand(cmd *cobra.Command, args []string) error {
+	if pathType != "xpath" && pathType != "gnmi" {
+		return fmt.Errorf("path-type must be one of 'xpath' or 'gnmi'")
+	}
+	var err error
+	dirs, err = resolveGlobs(dirs)
+	if err != nil {
+		return err
+	}
+	files, err = resolveGlobs(files)
+	if err != nil {
+		return err
+	}
+	for _, dirpath := range dirs {
+		expanded, err := yang.PathsWithModules(dirpath)
+		if err != nil {
+			return err
+		}
+		if cli.config.Debug {
+			for _, fdir := range expanded {
+				cli.logger.Printf("adding %s to YANG paths", fdir)
+			}
+		}
+		yang.AddPath(expanded...)
+	}
+	yfiles, err := findYangFiles(files)
+	if err != nil {
+		return err
+	}
+	files = make([]string, 0, len(yfiles))
+	files = append(files, yfiles...)
+	if cli.config.Debug {
+		for _, file := range files {
+			cli.logger.Printf("loading %s file", file)
+		}
+	}
+	return nil
 }
 
 func collectSchemaNodes(e *yang.Entry, leafOnly bool) []*yang.Entry {
