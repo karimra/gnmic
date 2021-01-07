@@ -399,8 +399,8 @@ func getFloat(v interface{}) (float64, error) {
 
 func (p *PrometheusOutput) metricName(measName, valueName string) string {
 	sb := strings.Builder{}
-	n, _ := sb.WriteString(p.metricRegex.ReplaceAllString(p.Cfg.MetricPrefix, "_"))
-	if n > 0 {
+	if p.Cfg.MetricPrefix != "" {
+		sb.WriteString(p.metricRegex.ReplaceAllString(p.Cfg.MetricPrefix, "_"))
 		sb.WriteString("_")
 	}
 	if p.Cfg.AppendSubscriptionName {
