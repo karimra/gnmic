@@ -1,3 +1,8 @@
+# This repo has moved to https://github.com/openconfig/gnmic
+
+
+
+
 <p align=center><img src=docs/images/gnmic-headline.svg?sanitize=true/></p>
 
 [![github release](https://img.shields.io/github/release/karimra/gnmic.svg?style=flat-square&color=00c9ff&labelColor=bec8d2)](https://github.com/karimra/gnmic/releases/)
